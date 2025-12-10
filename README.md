@@ -1,180 +1,255 @@
-# Playwright Actions: GitHub Actions-Style Browser Automation in Rust
+# Testing Actions
 
-A declarative workflow engine for browser automation that provides:
+A GitHub Actions-style declarative workflow engine for multi-platform test automation.
 
-- **GitHub Actions-style YAML syntax** for defining browser automation
-- **Flow DAG optimization** for fastest test execution
-- **Checkpoint system** to save/restore browser state
-- **Parallel execution** of independent test branches
+## Features
 
-## Concept Overview
-
-This library provides a **declarative workflow DSL** inspired by GitHub Actions that compiles to Playwright browser automation commands.
-
-## Core Innovation: DAG-Based Checkpoint Optimization
-
-Most test suites have shared prefixes (e.g., login → dashboard). Without optimization:
-
-```
-Test A: Login(5s) → Dashboard(2s) → Settings(1s) → Change Password(3s) = 11s
-Test B: Login(5s) → Dashboard(2s) → Settings(1s) → Notifications(2s) = 10s  
-Test C: Login(5s) → Dashboard(2s) → Profile(1s) → Edit Profile(2s) = 10s
-                                                            Total: 31s
-```
-
-With checkpoint optimization:
-
-```
-Login(5s) → checkpoint "logged_in"
-├── Restore → Dashboard(2s) → checkpoint "at_dashboard"
-│   ├── Restore → Settings(1s) → checkpoint "at_settings"
-│   │   ├── Restore → Change Password(3s)
-│   │   └── Restore → Notifications(2s)
-│   └── Restore → Profile(1s) → Edit Profile(2s)
-                                                            Total: 16s (48% faster!)
-```
+- **Declarative YAML workflows** - Define test automation like GitHub Actions
+- **Workflow dependencies** - DAG-based execution with `depends_on`
+- **Multi-platform execution** - Playwright, Node.js, Python, Java, Rust, Go, HTTP
+- **Parallel execution** - Run independent workflows simultaneously
+- **Expression syntax** - Use `${{ }}` for dynamic values
+- **Web dashboard** - ReactFlow-based DAG visualization
+- **Optional telemetry** - Report results to a server
 
 ## Quick Start
 
-### Simple Workflow
+### Installation
 
-```rust
-use testing_actions::prelude::*;
+```bash
+cargo install --path .
+```
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let workflow = r#"
-name: login-test
+### Run workflows
+
+```bash
+# Run all workflows in a directory
+testing-actions run-dir workflows/
+
+# Run a single workflow
+testing-actions run workflow.yaml
+
+# List workflows and execution order
+testing-actions list workflows/
+
+# Validate workflows
+testing-actions validate workflows/
+```
+
+### With telemetry reporting
+
+```bash
+testing-actions run-dir workflows/ --server http://localhost:3000
+```
+
+## Workflow Syntax
+
+```yaml
+name: api-tests
 on:
   manual: true
+depends_on:
+  - setup
+
 jobs:
-  login:
+  test:
+    steps:
+      - name: Health check
+        uses: web/get
+        with:
+          url: "https://api.example.com/health"
+
+      - name: Run tests
+        uses: bash/exec
+        with:
+          command: cargo test
+```
+
+### Workflow Dependencies
+
+Workflows can depend on other workflows using `depends_on`:
+
+```yaml
+# workflows/setup.yaml
+name: setup
+jobs:
+  init:
+    steps:
+      - uses: bash/exec
+        with:
+          command: docker-compose up -d
+
+# workflows/test.yaml
+name: test
+depends_on:
+  - setup
+jobs:
+  run:
+    steps:
+      - uses: bash/exec
+        with:
+          command: npm test
+```
+
+The engine builds a DAG and executes workflows in the correct order, running independent workflows in parallel.
+
+### Runner Configuration
+
+Create `runner.yaml` in your workflows directory:
+
+```yaml
+parallel: 4        # Max parallel workflows
+fail_fast: false   # Continue on failure
+```
+
+## Platforms
+
+### Bash
+
+```yaml
+- uses: bash/exec
+  with:
+    command: echo "Hello"
+    working_dir: /tmp
+```
+
+### Web/HTTP
+
+```yaml
+- uses: web/get
+  with:
+    url: "https://api.example.com/users"
+    headers:
+      Authorization: "Bearer ${{ env.TOKEN }}"
+
+- uses: web/post
+  with:
+    url: "https://api.example.com/users"
+    body:
+      name: "John"
+      email: "john@example.com"
+```
+
+### Playwright
+
+```yaml
+jobs:
+  e2e:
     browser: chromium
+    headless: true
     steps:
       - uses: page/goto
         with:
-          url: "https://example.com/login"
+          url: "https://example.com"
+
       - uses: element/fill
         with:
           selector: "#email"
           value: "${{ secrets.EMAIL }}"
+
       - uses: element/click
         with:
           selector: "button[type=submit]"
-"#;
-
-    let mut executor = Executor::new().await?;
-    executor.set_secret("EMAIL", "user@test.com");
-    
-    let result = executor.run_yaml(workflow).await?;
-    println!("Success: {}", result.success);
-    Ok(())
-}
 ```
 
-### Flow DAG with Checkpoints
+### Node.js, Python, Java, Rust, Go
 
-```rust
-use testing_actions::checkpoint::{Flow, FlowDag, ExecutionPlanner};
+Each platform supports calling registered functions via JSON-RPC:
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Define flows (see examples/flow-dag.yml for YAML format)
-    let flows = vec![
-        Flow { id: "login".into(), requires: vec![], ... },
-        Flow { id: "dashboard".into(), requires: vec!["login".into()], ... },
-        Flow { id: "settings".into(), requires: vec!["dashboard".into()], ... },
-    ];
-    
-    // Build DAG and plan execution
-    let dag = FlowDag::build(flows)?;
-    let planner = ExecutionPlanner::new();
-    let plan = planner.plan_full_suite(&dag, &existing_checkpoints);
-    
-    println!("Time saved: {}ms", plan.savings_ms);
-    println!("Speedup: {:.1}x", plan.baseline_time_ms / plan.estimated_time_ms);
-    
-    Ok(())
-}
+```yaml
+platforms:
+  nodejs:
+    script: ./functions.js
+
+jobs:
+  process:
+    platform: nodejs
+    steps:
+      - uses: myFunction
+        with:
+          arg1: value1
 ```
 
-## Architecture
+## Expression Syntax
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         PLAYWRIGHT ACTIONS                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐     │
-│  │   YAML Parser   │───▶│   Flow DAG      │───▶│   Execution     │     │
-│  │   (serde_yaml)  │    │   Builder       │    │   Planner       │     │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘     │
-│                                                         │               │
-│                                                         ▼               │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐     │
-│  │   Checkpoint    │◀──▶│   Flow          │───▶│   Playwright    │     │
-│  │   Store         │    │   Executor      │    │   Bridge        │     │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘     │
-│                                                         │               │
-│                                                         ▼               │
-│                                               ┌─────────────────┐       │
-│                                               │   Node.js       │       │
-│                                               │   Playwright    │       │
-│                                               └─────────────────┘       │
-└─────────────────────────────────────────────────────────────────────────┘
+Use `${{ }}` for dynamic values:
+
+- `${{ env.VAR }}` - Environment variable
+- `${{ secrets.PASSWORD }}` - Secret value
+- `${{ steps.step_id.outputs.result }}` - Step output
+- `${{ jobs.job_id.outputs.value }}` - Job output
+
+## Web Dashboard
+
+The `web/` directory contains a Next.js dashboard with:
+
+- ReactFlow DAG visualization
+- Real-time workflow status
+- GraphQL API for telemetry
+
+```bash
+cd web
+npm install
+npm run dev
 ```
 
 ## Project Structure
 
 ```
 testing-actions/
-├── Cargo.toml
 ├── src/
-│   ├── lib.rs              # Public API
-│   ├── workflow/           # YAML parsing, types, expressions
-│   ├── engine/             # Workflow execution
-│   ├── checkpoint/         # DAG, checkpoints, planner
-│   │   ├── dag.rs          # Flow DAG construction
-│   │   ├── store.rs        # Checkpoint storage
-│   │   ├── planner.rs      # Execution optimization
-│   │   └── executor.rs     # Parallel flow execution
-│   └── bridge/             # Playwright communication
-└── playwright-server/      # Node.js sidecar
+│   ├── bin/cli.rs      # CLI entry point
+│   ├── lib.rs          # Library exports
+│   ├── workflow/       # YAML parsing, types
+│   ├── engine/         # Execution engine, DAG
+│   └── bridge/         # Platform bridges
+├── workflows/          # Example workflows
+├── web/                # Next.js dashboard
+└── extensions/         # Platform extensions
+    ├── nodejs/
+    ├── python/
+    ├── java/
+    ├── rust/
+    └── go/
 ```
 
-## Available Actions
+## CLI Reference
 
-| Category | Action | Parameters | Description |
-|----------|--------|------------|-------------|
-| `page/` | `goto` | `url` | Navigate to URL |
-| | `reload` | - | Reload page |
-| | `back` | - | Go back |
-| | `url` | - | Get current URL |
-| | `title` | - | Get page title |
-| `element/` | `click` | `selector` | Click element |
-| | `fill` | `selector`, `value` | Fill input |
-| | `type` | `selector`, `text`, `delay` | Type with delay |
-| | `select` | `selector`, `value` | Select option |
-| | `hover` | `selector` | Hover element |
-| `assert/` | `visible` | `selector` | Assert visible |
-| | `hidden` | `selector` | Assert hidden |
-| | `text_contains` | `selector`, `text` | Assert text |
-| | `url_contains` | `pattern` | Assert URL |
-| `wait/` | `selector` | `selector`, `timeout` | Wait for element |
-| | `navigation` | `timeout` | Wait for navigation |
-| | `url` | `pattern`, `timeout` | Wait for URL |
-| `browser/` | `screenshot` | `path`, `fullPage` | Take screenshot |
-| | `pdf` | `path` | Generate PDF |
+```
+testing-actions [OPTIONS] <COMMAND>
 
-## Expression Syntax
+Commands:
+  run       Run a single workflow file
+  run-dir   Run all workflows in a directory
+  list      List workflows in a directory
+  validate  Validate workflow files
 
-Use `${{ }}` for dynamic values:
+Options:
+  -s, --server <URL>  Server URL for telemetry
+  -v, --verbose       Enable verbose output
+  -h, --help          Print help
+  -V, --version       Print version
+```
 
-- `${{ env.BASE_URL }}` - Environment variable
-- `${{ secrets.PASSWORD }}` - Secret (not logged)
-- `${{ steps.login.outputs.token }}` - Step output
-- `${{ jobs.setup.outputs.user_id }}` - Job output
+### run-dir options
+
+```
+testing-actions run-dir <DIR> [OPTIONS]
+
+Options:
+  -c, --config <FILE>    Runner config file
+  -p, --parallel <N>     Max parallel workflows
+  -f, --fail-fast        Stop on first failure
+  -F, --filter <PREFIX>  Filter by name prefix
+```
 
 ## License
 
-MIT
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+Copyright (c) 2025 Alex Choi

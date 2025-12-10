@@ -3,7 +3,8 @@ name = "testing-actions"
 version = "0.1.0"
 edition = "2021"
 description = "GitHub Actions-style declarative workflow engine for multi-platform test automation"
-license = "MIT"
+license = "MIT OR Apache-2.0"
+authors = ["Alex Choi"]
 repository = "https://github.com/anthropics/testing-actions"
 
 [lib]
