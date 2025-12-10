@@ -96,3 +96,7 @@ path = "examples/workflow_directory.rs"
 [[bin]]
 name = "testing-actions"
 path = "src/bin/cli.rs"
+
+[[bin]]
+name = "ta-cli"
+path = "src/bin/ta_cli.rs"
