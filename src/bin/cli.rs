@@ -20,7 +20,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Parser)]
-#[command(name = "testing-actions")]
+#[command(name = "ta-run")]
 #[command(about = "Run declarative test workflows", long_about = None)]
 #[command(version)]
 struct Cli {
