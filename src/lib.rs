@@ -53,6 +53,7 @@
 pub mod workflow;
 pub mod engine;
 pub mod bridge;
+pub mod client;
 
 #[path = "../extensions/rust/mod.rs"]
 pub mod rust_bridge;
