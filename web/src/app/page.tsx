@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { v4 as uuidv4 } from 'uuid';
 import RunControls from '@/components/workflow/run-controls';
 import WorkflowDetail from '@/components/workflow/workflow-detail';
 import { useSession } from '@/lib/auth-client';
@@ -107,7 +108,7 @@ export default function Home() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
-  const [runId] = useState('run-abc123');
+  const runId = useMemo(() => uuidv4(), []);
 
   useEffect(() => {
     if (!isPending && !session) {

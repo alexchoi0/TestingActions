@@ -29,7 +29,7 @@ export const auth = betterAuth({
     accountLinking: { enabled: true },
   },
   callbacks: {
-    async onUserCreate({ user }) {
+    async onUserCreate({ user }: { user: { id: string; email: string } }) {
       if (allowedEmails.length > 0 && !allowedEmails.includes(user.email.toLowerCase())) {
         await prisma.user.delete({ where: { id: user.id } });
         throw new Error("User not allowed");

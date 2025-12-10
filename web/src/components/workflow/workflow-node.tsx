@@ -16,6 +16,7 @@ interface WorkflowNodeData {
 const statusColors: Record<WorkflowStatus, string> = {
   pending: 'bg-zinc-500',
   running: 'bg-blue-500 animate-pulse',
+  paused: 'bg-yellow-500',
   success: 'bg-green-500',
   failed: 'bg-red-500',
   skipped: 'bg-zinc-400',
@@ -24,6 +25,7 @@ const statusColors: Record<WorkflowStatus, string> = {
 const statusBorder: Record<WorkflowStatus, string> = {
   pending: 'border-zinc-300',
   running: 'border-blue-500 shadow-lg shadow-blue-500/20',
+  paused: 'border-yellow-500 shadow-lg shadow-yellow-500/20',
   success: 'border-green-500',
   failed: 'border-red-500',
   skipped: 'border-zinc-300',
