@@ -94,9 +94,9 @@ name = "workflow_directory"
 path = "examples/workflow_directory.rs"
 
 [[bin]]
-name = "testing-actions"
+name = "ta-run"
 path = "src/bin/cli.rs"
 
 [[bin]]
-name = "ta-cli"
+name = "ta-ctl"
 path = "src/bin/ta_cli.rs"

@@ -19,17 +19,27 @@ use tracing_subscriber::layer::SubscriberExt;
 #[cfg(feature = "otel")]
 use tracing_subscriber::util::SubscriberInitExt;
 
+const DEFAULT_SERVER_URL: &str = "http://localhost:3000";
+
+fn get_server_url() -> String {
+    std::env::var("TA_SERVER_URL").unwrap_or_else(|_| DEFAULT_SERVER_URL.to_string())
+}
+
 #[derive(Parser)]
-#[command(name = "testing-actions")]
+#[command(name = "ta-run")]
 #[command(about = "Run declarative test workflows", long_about = None)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Server URL for telemetry reporting (optional)
+    /// Server URL for telemetry reporting [env: TA_SERVER_URL]
     #[arg(short, long, global = true)]
     server: Option<String>,
+
+    /// Disable server connection (run offline)
+    #[arg(long, global = true)]
+    offline: bool,
 
     /// Enable verbose output
     #[arg(short, long, global = true)]
@@ -165,7 +175,13 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<bool> {
-    let server_url = cli.server;
+    // Determine server URL: --server flag > TA_SERVER_URL env > default
+    // Unless --offline is set
+    let server_url = if cli.offline {
+        None
+    } else {
+        Some(cli.server.unwrap_or_else(get_server_url))
+    };
 
     match cli.command {
         Commands::Run { file } => run_single(file, server_url.as_deref()).await,

@@ -17,8 +17,8 @@ fn get_server_url() -> String {
 }
 
 #[derive(Parser)]
-#[command(name = "ta-cli")]
-#[command(about = "CLI for Testing Actions workflow dashboard", long_about = None)]
+#[command(name = "ta-ctl")]
+#[command(about = "Control and query Testing Actions workflow server", long_about = None)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
