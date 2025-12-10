@@ -4,80 +4,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
 use futures::stream::StreamExt;
 use futures::SinkExt;
-use serde::{Deserialize, Serialize};
+use testing_actions::client::{subscriptions, EventType, RunEvent};
 use testing_actions::prelude::*;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum EventType {
-    RunStarted,
-    RunCompleted,
-    WorkflowStarted,
-    WorkflowCompleted,
-    WorkflowSkipped,
-    JobStarted,
-    JobCompleted,
-    StepStarted,
-    StepCompleted,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RunEvent {
-    pub event_type: EventType,
-    pub run_id: String,
-    pub timestamp: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub job_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub step_index: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub step_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub success: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-impl RunEvent {
-    pub fn workflow_completed(run_id: &str, workflow_name: &str, success: bool, error: Option<String>) -> Self {
-        Self {
-            event_type: EventType::WorkflowCompleted,
-            run_id: run_id.to_string(),
-            timestamp: Utc::now(),
-            workflow_name: Some(workflow_name.to_string()),
-            job_name: None,
-            step_index: None,
-            step_name: None,
-            success: Some(success),
-            error,
-            reason: None,
-        }
-    }
-
-    pub fn workflow_skipped(run_id: &str, workflow_name: &str, reason: &str) -> Self {
-        Self {
-            event_type: EventType::WorkflowSkipped,
-            run_id: run_id.to_string(),
-            timestamp: Utc::now(),
-            workflow_name: Some(workflow_name.to_string()),
-            job_name: None,
-            step_index: None,
-            step_name: None,
-            success: None,
-            error: None,
-            reason: Some(reason.to_string()),
-        }
-    }
-}
 use testing_actions::workflow::RunnerConfig;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
@@ -432,10 +364,7 @@ fn start_command_listener(
                                             "id": "1",
                                             "type": "subscribe",
                                             "payload": {
-                                                "query": format!(
-                                                    "subscription {{ commandsForRun(runId: \"{}\") {{ commandType runId timestamp agentToken }} }}",
-                                                    run_id
-                                                )
+                                                "query": subscriptions::commands_for_run(&run_id)
                                             }
                                         });
                                         if write
