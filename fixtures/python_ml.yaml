@@ -1,0 +1,240 @@
+# Python ML & Analytics Workflow
+#
+# Demonstrates Python platform features:
+# - ML model inference
+# - Data analysis
+# - Scientific computing
+# - Custom assertions
+
+name: python-ml-test
+on:
+  manual: true
+
+platform: python
+
+platforms:
+  python:
+    script: ./ml-services/main.py
+    venv: ./ml-services/.venv
+    working_dir: ./ml-services
+    env:
+      PYTHONPATH: "./src"
+      MODEL_PATH: "./models"
+    hooks:
+      before_all: load_models
+      after_all: cleanup_temp_files
+      before_each: reset_random_seed
+
+jobs:
+  fraud_detection:
+    name: Fraud Detection ML
+    steps:
+      # Analyze transaction for fraud
+      - name: Analyze transaction
+        uses: py/call
+        id: fraud
+        with:
+          function: analyze_transaction
+          args:
+            transaction:
+              amount: 1500.00
+              currency: "USD"
+              merchant_category: "electronics"
+              location: "New York, US"
+              time: "2024-01-15T14:30:00Z"
+            user_profile:
+              id: "user_123"
+              average_transaction: 200.00
+              typical_locations: ["New York, US", "Boston, US"]
+              account_age_days: 365
+
+      - name: Assert fraud score calculated
+        uses: assert/custom
+        with:
+          assertion: is_valid_probability
+          params:
+            value: ${{ steps.fraud.outputs.risk_score }}
+
+      # Batch fraud analysis
+      - name: Batch analyze
+        uses: py/call
+        id: batch_fraud
+        with:
+          function: batch_analyze_transactions
+          args:
+            transactions_file: "./test-data/transactions.csv"
+            threshold: 0.7
+
+      - name: Assert flagged count
+        uses: assert/custom
+        with:
+          assertion: count_in_range
+          params:
+            actual: ${{ steps.batch_fraud.outputs.flagged_count }}
+            min: 0
+            max: ${{ steps.batch_fraud.outputs.total_count }}
+
+  sentiment_analysis:
+    name: Sentiment Analysis
+    steps:
+      # Analyze text sentiment
+      - name: Analyze review sentiment
+        uses: py/call
+        id: sentiment
+        with:
+          function: analyze_sentiment
+          args:
+            text: "This product exceeded my expectations! Great quality and fast shipping."
+            model: "distilbert-sentiment"
+
+      - name: Assert positive sentiment
+        uses: assert/equals
+        with:
+          actual: ${{ steps.sentiment.outputs.label }}
+          expected: "positive"
+
+      # Batch sentiment analysis
+      - name: Analyze reviews batch
+        uses: py/call
+        id: reviews
+        with:
+          function: batch_sentiment_analysis
+          args:
+            reviews:
+              - text: "Excellent product!"
+                id: "rev_1"
+              - text: "Terrible experience, would not recommend."
+                id: "rev_2"
+              - text: "It's okay, nothing special."
+                id: "rev_3"
+
+  data_analysis:
+    name: Statistical Analysis
+    needs: [fraud_detection]
+    steps:
+      # Calculate statistics
+      - name: Calculate order statistics
+        uses: py/call
+        id: stats
+        with:
+          function: calculate_statistics
+          args:
+            data_source: "./test-data/orders.parquet"
+            metrics:
+              - mean
+              - median
+              - std
+              - percentiles
+            group_by: "category"
+
+      # Time series analysis
+      - name: Analyze sales trend
+        uses: py/call
+        id: trend
+        with:
+          function: analyze_time_series
+          args:
+            data_source: "./test-data/daily_sales.csv"
+            date_column: "date"
+            value_column: "revenue"
+            frequency: "daily"
+            forecast_periods: 30
+
+      - name: Assert trend detected
+        uses: assert/custom
+        with:
+          assertion: trend_is_significant
+          params:
+            p_value: ${{ steps.trend.outputs.trend_p_value }}
+            significance_level: 0.05
+
+  image_classification:
+    name: Image Classification
+    steps:
+      # Classify product images
+      - name: Classify product image
+        uses: py/call
+        id: classify
+        with:
+          function: classify_image
+          args:
+            image_path: "./test-images/product_001.jpg"
+            model: "resnet50"
+            top_k: 5
+
+      - name: Assert classification confidence
+        uses: assert/custom
+        with:
+          assertion: confidence_above_threshold
+          params:
+            confidence: ${{ steps.classify.outputs.top_prediction.confidence }}
+            threshold: 0.8
+
+      # Batch image processing
+      - name: Process product catalog images
+        uses: py/call
+        id: batch_images
+        with:
+          function: batch_process_images
+          args:
+            input_dir: "./test-images/catalog"
+            operations:
+              - classify
+              - extract_features
+              - detect_objects
+
+  recommendation_engine:
+    name: Recommendation System
+    steps:
+      # Get user recommendations
+      - name: Get recommendations
+        uses: py/call
+        id: recs
+        with:
+          function: get_recommendations
+          args:
+            user_id: "user_456"
+            context:
+              current_page: "electronics"
+              cart_items: ["prod_1", "prod_2"]
+            limit: 10
+            algorithm: "collaborative_filtering"
+
+      - name: Assert recommendations returned
+        uses: assert/custom
+        with:
+          assertion: list_length_equals
+          params:
+            list: ${{ steps.recs.outputs.recommendations }}
+            expected_length: 10
+
+      # A/B test analysis
+      - name: Analyze A/B test
+        uses: py/call
+        id: ab_test
+        with:
+          function: analyze_ab_test
+          args:
+            experiment_id: "exp_rec_algorithm_v2"
+            metric: "click_through_rate"
+            confidence_level: 0.95
+
+  custom_assertions:
+    name: Python Custom Assertions
+    steps:
+      - name: Assert data distribution
+        uses: assert/custom
+        with:
+          assertion: is_normal_distribution
+          params:
+            data: ${{ steps.stats.outputs.revenue_values }}
+            significance_level: 0.05
+
+      - name: Assert model accuracy
+        uses: assert/custom
+        with:
+          assertion: model_accuracy_above
+          params:
+            predictions_file: "./test-data/predictions.csv"
+            ground_truth_file: "./test-data/labels.csv"
+            min_accuracy: 0.95

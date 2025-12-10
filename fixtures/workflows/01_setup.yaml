@@ -1,0 +1,9 @@
+name: setup
+
+jobs:
+  init:
+    steps:
+      - name: Wait for initialization
+        uses: wait/ms
+        with:
+          duration: 100

@@ -1,0 +1,32 @@
+name: web
+on:
+  manual: true
+
+jobs:
+  install:
+    steps:
+      - name: Install dependencies
+        uses: bash/exec
+        with:
+          command: cd web && npm install
+
+  typecheck:
+    steps:
+      - name: TypeScript check
+        uses: bash/exec
+        with:
+          command: cd web && npx tsc --noEmit
+
+  lint:
+    steps:
+      - name: ESLint
+        uses: bash/exec
+        with:
+          command: cd web && npm run lint
+
+  build:
+    steps:
+      - name: Build Next.js
+        uses: bash/exec
+        with:
+          command: cd web && npm run build

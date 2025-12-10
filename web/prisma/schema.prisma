@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Run {
+  id           String    @id
+  status       String    @default("pending")
+  workflowsDir String    @map("workflows_dir")
+  startedAt    DateTime  @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  configJson   String?   @map("config_json")
+  agentToken   String?   @map("agent_token")
+
+  workflowResults WorkflowResult[]
+  jobResults      JobResult[]
+  stepResults     StepResult[]
+  artifacts       Artifact[]
+
+  @@map("runs")
+}
+
+model WorkflowResult {
+  id           String    @id @default(uuid())
+  runId        String    @map("run_id")
+  workflowName String    @map("workflow_name")
+  status       String
+  startedAt    DateTime  @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  error        String?
+
+  run Run @relation(fields: [runId], references: [id])
+
+  @@map("workflow_results")
+}
+
+model JobResult {
+  id           String    @id @default(uuid())
+  runId        String    @map("run_id")
+  workflowName String    @map("workflow_name")
+  jobName      String    @map("job_name")
+  status       String
+  startedAt    DateTime  @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  error        String?
+
+  run Run @relation(fields: [runId], references: [id])
+
+  @@map("job_results")
+}
+
+model StepResult {
+  id           String    @id @default(uuid())
+  runId        String    @map("run_id")
+  workflowName String    @map("workflow_name")
+  jobName      String    @map("job_name")
+  stepIndex    Int       @map("step_index")
+  stepName     String    @map("step_name")
+  status       String
+  startedAt    DateTime  @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  outputJson   String?   @map("output_json")
+  error        String?
+
+  run Run @relation(fields: [runId], references: [id])
+
+  @@map("step_results")
+}
+
+model Artifact {
+  id           String   @id @default(uuid())
+  runId        String   @map("run_id")
+  workflowName String   @map("workflow_name")
+  jobName      String   @map("job_name")
+  name         String
+  path         String
+  sizeBytes    Int      @map("size_bytes")
+  contentType  String?  @map("content_type")
+  createdAt    DateTime @map("created_at")
+
+  run Run @relation(fields: [runId], references: [id])
+
+  @@map("artifacts")
+}

@@ -1,0 +1,12 @@
+name: cleanup
+depends_on:
+  workflows: [api-tests, e2e-tests]
+  always: true
+
+jobs:
+  teardown:
+    steps:
+      - name: Cleanup resources
+        uses: wait/ms
+        with:
+          duration: 30

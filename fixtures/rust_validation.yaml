@@ -1,0 +1,233 @@
+# Rust Validation & Cryptography Workflow
+#
+# Demonstrates Rust platform features:
+# - High-performance function calls
+# - Cryptographic operations
+# - Data validation
+# - Custom assertions
+
+name: rust-validation-test
+on:
+  manual: true
+
+platform: rust
+
+platforms:
+  rust:
+    binary: ./target/release/test-registry
+    working_dir: ./rust-tests
+    env:
+      RUST_LOG: "info"
+    hooks:
+      before_all: initialize_crypto
+      after_all: cleanup_temp_files
+      before_each: clear_cache
+      after_each: log_metrics
+
+jobs:
+  cryptography:
+    name: Cryptographic Operations
+    steps:
+      # Password hashing
+      - name: Hash password with Argon2
+        uses: rs/call
+        id: hash
+        with:
+          function: hash_password
+          args:
+            password: "SecurePassword123!"
+            algorithm: "argon2id"
+            memory_cost: 65536
+            time_cost: 3
+
+      - name: Verify password
+        uses: rs/call
+        id: verify
+        with:
+          function: verify_password
+          args:
+            password: "SecurePassword123!"
+            hash: ${{ steps.hash.outputs.hash }}
+
+      - name: Assert password verified
+        uses: assert/equals
+        with:
+          actual: ${{ steps.verify.outputs.valid }}
+          expected: "true"
+
+      # Generate secure tokens
+      - name: Generate API key
+        uses: rs/call
+        id: api_key
+        with:
+          function: generate_secure_token
+          args:
+            length: 32
+            prefix: "sk_live_"
+
+      - name: Generate HMAC signature
+        uses: rs/call
+        id: signature
+        with:
+          function: hmac_sign
+          args:
+            data: '{"user_id": 123, "action": "transfer"}'
+            key: ${{ secrets.HMAC_SECRET }}
+            algorithm: "sha256"
+
+  data_validation:
+    name: Data Validation
+    needs: [cryptography]
+    steps:
+      # Validate email format
+      - name: Validate email
+        uses: rs/call
+        id: email_valid
+        with:
+          function: validate_email
+          args:
+            email: "user@example.com"
+
+      - name: Assert email valid
+        uses: assert/equals
+        with:
+          actual: ${{ steps.email_valid.outputs.valid }}
+          expected: "true"
+
+      # Validate complex object
+      - name: Validate order data
+        uses: rs/call
+        id: order_valid
+        with:
+          function: validate_order
+          args:
+            order:
+              id: "ord_123"
+              user_id: "usr_456"
+              items:
+                - product_id: "prod_1"
+                  quantity: 2
+                  price: 29.99
+                - product_id: "prod_2"
+                  quantity: 1
+                  price: 49.99
+              total: 109.97
+              currency: "USD"
+
+      # Validate with custom rules
+      - name: Validate with schema
+        uses: rs/call
+        id: schema_valid
+        with:
+          function: validate_json_schema
+          args:
+            data:
+              name: "Test Product"
+              price: 99.99
+              stock: 100
+            schema: "product_v1"
+
+  integrity_checks:
+    name: Data Integrity
+    steps:
+      # Calculate checksums
+      - name: Calculate SHA256
+        uses: rs/call
+        id: checksum
+        with:
+          function: calculate_checksum
+          args:
+            data: "Important data to verify"
+            algorithm: "sha256"
+
+      - name: Verify checksum
+        uses: rs/call
+        id: checksum_verify
+        with:
+          function: verify_checksum
+          args:
+            data: "Important data to verify"
+            expected: ${{ steps.checksum.outputs.hash }}
+            algorithm: "sha256"
+
+      # Merkle tree verification
+      - name: Build Merkle tree
+        uses: rs/call
+        id: merkle
+        with:
+          function: build_merkle_tree
+          args:
+            items:
+              - "transaction_1"
+              - "transaction_2"
+              - "transaction_3"
+              - "transaction_4"
+
+      - name: Verify Merkle proof
+        uses: rs/call
+        with:
+          function: verify_merkle_proof
+          args:
+            root: ${{ steps.merkle.outputs.root }}
+            item: "transaction_2"
+            proof: ${{ steps.merkle.outputs.proofs.transaction_2 }}
+
+  custom_assertions:
+    name: Custom Rust Assertions
+    steps:
+      - name: Assert valid UUID
+        uses: assert/custom
+        with:
+          assertion: is_valid_uuid
+          params:
+            value: "550e8400-e29b-41d4-a716-446655440000"
+
+      - name: Assert in range
+        uses: assert/custom
+        with:
+          assertion: is_in_range
+          params:
+            value: 42
+            min: 0
+            max: 100
+
+      - name: Assert matches pattern
+        uses: assert/custom
+        with:
+          assertion: matches_regex
+          params:
+            value: "user_123_abc"
+            pattern: "^user_\\d+_[a-z]+$"
+
+  performance_test:
+    name: Performance Benchmarks
+    steps:
+      # Batch processing
+      - name: Process large dataset
+        uses: rs/call
+        id: batch
+        with:
+          function: process_batch
+          args:
+            items: 10000
+            operation: "transform"
+            parallel: true
+
+      - name: Assert processing time
+        uses: assert/custom
+        with:
+          assertion: execution_time_under
+          params:
+            actual_ms: ${{ steps.batch.outputs.elapsed_ms }}
+            max_ms: 1000
+
+      # Memory-efficient operations
+      - name: Stream process file
+        uses: rs/call
+        id: stream
+        with:
+          function: stream_process
+          args:
+            input: "./test-data/large-file.json"
+            chunk_size: 8192
+            operation: "validate"

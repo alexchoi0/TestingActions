@@ -1,0 +1,7 @@
+parallel: 2
+fail_fast: false
+
+platforms:
+  web:
+    base_url: "http://localhost:3000"
+    timeout: 5000

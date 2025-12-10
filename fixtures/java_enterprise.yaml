@@ -1,0 +1,266 @@
+# Java Enterprise Integration Workflow
+#
+# Demonstrates Java platform features:
+# - Enterprise service calls
+# - Payment gateway integration
+# - Message queue operations
+# - Custom assertions
+
+name: java-enterprise-test
+on:
+  manual: true
+
+platform: java
+
+platforms:
+  java:
+    jar: ./enterprise-services/target/test-services.jar
+    main_class: com.example.TestServiceRegistry
+    classpath:
+      - ./enterprise-services/target/dependencies/*
+    jvm_args:
+      - "-Xmx512m"
+      - "-Dspring.profiles.active=test"
+    env:
+      JAVA_TOOL_OPTIONS: "-Dfile.encoding=UTF-8"
+    hooks:
+      before_all: startServices
+      after_all: stopServices
+      before_each: beginTransaction
+      after_each: rollbackTransaction
+
+jobs:
+  payment_processing:
+    name: Payment Gateway Integration
+    steps:
+      # Create payment intent
+      - name: Create payment intent
+        uses: java/call
+        id: intent
+        with:
+          method: createPaymentIntent
+          args:
+            amount: 9999
+            currency: "USD"
+            customer_id: "cus_test123"
+            metadata:
+              order_id: "ord_456"
+              product: "Premium Subscription"
+
+      - name: Assert intent created
+        uses: assert/equals
+        with:
+          actual: ${{ steps.intent.outputs.status }}
+          expected: "requires_payment_method"
+
+      # Confirm payment
+      - name: Confirm payment
+        uses: java/call
+        id: confirm
+        with:
+          method: confirmPayment
+          args:
+            intent_id: ${{ steps.intent.outputs.id }}
+            payment_method: "pm_card_visa"
+
+      - name: Assert payment succeeded
+        uses: assert/equals
+        with:
+          actual: ${{ steps.confirm.outputs.status }}
+          expected: "succeeded"
+
+      # Refund payment
+      - name: Process refund
+        uses: java/call
+        id: refund
+        with:
+          method: createRefund
+          args:
+            payment_id: ${{ steps.confirm.outputs.id }}
+            amount: 4999
+            reason: "customer_request"
+
+  message_queue:
+    name: Message Queue Operations
+    steps:
+      # Publish message
+      - name: Publish order event
+        uses: java/call
+        id: publish
+        with:
+          method: publishMessage
+          args:
+            queue: "orders.created"
+            message:
+              event_type: "ORDER_CREATED"
+              order_id: "ord_789"
+              customer_id: "cus_123"
+              total: 149.99
+              timestamp: "2024-01-15T10:30:00Z"
+
+      - name: Assert message published
+        uses: assert/equals
+        with:
+          actual: ${{ steps.publish.outputs.success }}
+          expected: "true"
+
+      # Consume message
+      - name: Consume order event
+        uses: java/call
+        id: consume
+        with:
+          method: consumeMessage
+          args:
+            queue: "orders.created"
+            timeout_ms: 5000
+
+      - name: Assert message received
+        uses: assert/equals
+        with:
+          actual: ${{ steps.consume.outputs.message.order_id }}
+          expected: "ord_789"
+
+      # Publish batch
+      - name: Publish batch events
+        uses: java/call
+        with:
+          method: publishBatch
+          args:
+            queue: "inventory.updates"
+            messages:
+              - product_id: "prod_1"
+                delta: -5
+              - product_id: "prod_2"
+                delta: -3
+              - product_id: "prod_3"
+                delta: 10
+
+  database_operations:
+    name: Database Repository Operations
+    needs: [payment_processing]
+    steps:
+      # Save entity
+      - name: Save customer
+        uses: java/call
+        id: save
+        with:
+          method: saveCustomer
+          args:
+            customer:
+              email: "test@example.com"
+              name: "Test Customer"
+              tier: "PREMIUM"
+              created_at: "2024-01-15T10:00:00Z"
+
+      # Find entity
+      - name: Find customer
+        uses: java/call
+        id: find
+        with:
+          method: findCustomerById
+          args:
+            id: ${{ steps.save.outputs.id }}
+
+      - name: Assert customer found
+        uses: assert/equals
+        with:
+          actual: ${{ steps.find.outputs.email }}
+          expected: "test@example.com"
+
+      # Query with criteria
+      - name: Search customers
+        uses: java/call
+        id: search
+        with:
+          method: searchCustomers
+          args:
+            criteria:
+              tier: "PREMIUM"
+              created_after: "2024-01-01T00:00:00Z"
+            page: 0
+            size: 10
+            sort: "created_at,desc"
+
+  external_api:
+    name: External API Integration
+    steps:
+      # Call shipping API
+      - name: Calculate shipping rates
+        uses: java/call
+        id: shipping
+        with:
+          method: calculateShippingRates
+          args:
+            origin:
+              postal_code: "10001"
+              country: "US"
+            destination:
+              postal_code: "90210"
+              country: "US"
+            package:
+              weight_oz: 16
+              dimensions:
+                length: 10
+                width: 8
+                height: 4
+            carriers:
+              - "ups"
+              - "fedex"
+              - "usps"
+
+      - name: Assert rates returned
+        uses: assert/custom
+        with:
+          assertion: hasMinimumRates
+          params:
+            rates: ${{ steps.shipping.outputs.rates }}
+            minimum: 1
+
+      # Call tax API
+      - name: Calculate tax
+        uses: java/call
+        id: tax
+        with:
+          method: calculateTax
+          args:
+            order_total: 149.99
+            shipping: 9.99
+            destination:
+              state: "CA"
+              city: "Los Angeles"
+              postal_code: "90001"
+            line_items:
+              - product_type: "physical"
+                amount: 99.99
+                quantity: 1
+              - product_type: "digital"
+                amount: 50.00
+                quantity: 1
+
+  custom_assertions:
+    name: Java Custom Assertions
+    steps:
+      - name: Assert valid credit card
+        uses: assert/custom
+        with:
+          assertion: isValidCreditCard
+          params:
+            number: "4111111111111111"
+            type: "visa"
+
+      - name: Assert transaction idempotent
+        uses: assert/custom
+        with:
+          assertion: isIdempotent
+          params:
+            operation: "createPayment"
+            idempotency_key: "idem_123"
+            expected_result: ${{ steps.confirm.outputs }}
+
+      - name: Assert within SLA
+        uses: assert/custom
+        with:
+          assertion: responseTimeWithinSla
+          params:
+            actual_ms: ${{ steps.shipping.outputs.elapsed_ms }}
+            sla_ms: 2000

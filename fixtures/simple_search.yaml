@@ -1,0 +1,58 @@
+# Simple Search Workflow
+#
+# A basic Playwright workflow that searches DuckDuckGo
+# Demonstrates: page navigation, element interaction, screenshots
+
+name: search-example
+on:
+  manual: true
+
+env:
+  SEARCH_ENGINE: "https://duckduckgo.com"
+
+jobs:
+  search:
+    name: Perform Search
+    browser: chromium
+    headless: false
+    viewport:
+      width: 1280
+      height: 720
+    steps:
+      - name: Navigate to search engine
+        uses: page/goto
+        with:
+          url: "${{ env.SEARCH_ENGINE }}"
+
+      - name: Wait for search box
+        uses: wait/selector
+        with:
+          selector: "input[name='q']"
+          timeout: 5000
+
+      - name: Enter search query
+        uses: element/fill
+        with:
+          selector: "input[name='q']"
+          value: "Rust programming language"
+
+      - name: Submit search
+        uses: element/click
+        with:
+          selector: "button[type='submit']"
+
+      - name: Wait for results
+        uses: wait/selector
+        with:
+          selector: ".results"
+          timeout: 10000
+
+      - name: Get page title
+        id: get_title
+        uses: page/title
+
+      - name: Screenshot results
+        uses: browser/screenshot
+        with:
+          path: "search_results.png"
+          fullPage: false

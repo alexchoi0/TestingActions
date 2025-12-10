@@ -1,0 +1,13 @@
+name: test
+on:
+  manual: true
+depends_on:
+  - build
+
+jobs:
+  cargo-test:
+    steps:
+      - name: Run tests
+        uses: bash/exec
+        with:
+          command: cargo test

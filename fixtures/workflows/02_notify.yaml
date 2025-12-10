@@ -1,0 +1,10 @@
+name: notify
+depends_on: [api-tests]
+
+jobs:
+  send:
+    steps:
+      - name: Send notification (starts right after api-tests)
+        uses: wait/ms
+        with:
+          duration: 30

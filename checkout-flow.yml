@@ -1,0 +1,215 @@
+# Example: E-commerce checkout flow test
+# This workflow demonstrates the GitHub Actions-style syntax
+# for browser automation
+
+name: checkout-flow-test
+
+on:
+  manual: true
+  # Can also trigger on schedule
+  # schedule: "0 9 * * 1"  # Every Monday at 9am
+
+env:
+  BASE_URL: "https://demo.example.com"
+  
+jobs:
+  # First job: Login
+  login:
+    name: User Login
+    browser: chromium
+    headless: false
+    viewport:
+      width: 1280
+      height: 720
+    steps:
+      - name: Navigate to site
+        uses: page/goto
+        with:
+          url: "${{ env.BASE_URL }}"
+      
+      - name: Click login button
+        uses: element/click
+        with:
+          selector: "[data-testid='login-button']"
+      
+      - name: Wait for login form
+        uses: wait/selector
+        with:
+          selector: "#login-form"
+          timeout: 5000
+      
+      - name: Enter email
+        uses: element/fill
+        with:
+          selector: "#email"
+          value: "${{ secrets.TEST_EMAIL }}"
+      
+      - name: Enter password
+        uses: element/fill
+        with:
+          selector: "#password"
+          value: "${{ secrets.TEST_PASSWORD }}"
+      
+      - name: Submit login
+        uses: element/click
+        with:
+          selector: "button[type='submit']"
+      
+      - name: Verify logged in
+        id: verify_login
+        uses: wait/selector
+        with:
+          selector: "[data-testid='user-menu']"
+          timeout: 10000
+      
+      - name: Get username
+        id: get_user
+        uses: element/text
+        with:
+          selector: "[data-testid='username-display']"
+
+  # Second job: Add items to cart (depends on login)
+  add_to_cart:
+    name: Add Products to Cart
+    browser: chromium
+    headless: false
+    needs: [login]
+    steps:
+      - name: Navigate to products
+        uses: page/goto
+        with:
+          url: "${{ env.BASE_URL }}/products"
+      
+      - name: Wait for products to load
+        uses: wait/selector
+        with:
+          selector: ".product-grid"
+      
+      - name: Click first product
+        uses: element/click
+        with:
+          selector: ".product-card:first-child"
+      
+      - name: Select size
+        uses: element/select
+        with:
+          selector: "#size-select"
+          value: "medium"
+      
+      - name: Add to cart
+        uses: element/click
+        with:
+          selector: "[data-testid='add-to-cart']"
+      
+      - name: Verify cart updated
+        uses: assert/visible
+        with:
+          selector: ".cart-badge"
+      
+      - name: Take screenshot of cart
+        uses: browser/screenshot
+        with:
+          path: "screenshots/cart-added.png"
+
+  # Third job: Checkout process
+  checkout:
+    name: Complete Checkout
+    browser: chromium
+    headless: false
+    needs: [add_to_cart]
+    continue_on_error: false
+    steps:
+      - name: Go to cart
+        uses: element/click
+        with:
+          selector: "[data-testid='cart-icon']"
+      
+      - name: Wait for cart page
+        uses: wait/url
+        with:
+          pattern: "/cart"
+          timeout: 5000
+      
+      - name: Verify cart has items
+        uses: assert/visible
+        with:
+          selector: ".cart-item"
+      
+      - name: Click checkout
+        uses: element/click
+        with:
+          selector: "[data-testid='checkout-button']"
+      
+      - name: Fill shipping info
+        uses: element/fill
+        with:
+          selector: "#shipping-address"
+          value: "123 Test Street"
+      
+      - name: Fill city
+        uses: element/fill
+        with:
+          selector: "#city"
+          value: "Test City"
+      
+      - name: Fill zip
+        uses: element/fill
+        with:
+          selector: "#zip"
+          value: "12345"
+      
+      - name: Continue to payment
+        uses: element/click
+        with:
+          selector: "[data-testid='continue-payment']"
+      
+      # Payment step with retry
+      - name: Enter card number
+        uses: element/fill
+        with:
+          selector: "#card-number"
+          value: "4111111111111111"
+        retry:
+          max_attempts: 3
+          delay: 1000
+      
+      - name: Enter expiry
+        uses: element/fill
+        with:
+          selector: "#card-expiry"
+          value: "12/25"
+      
+      - name: Enter CVV
+        uses: element/fill
+        with:
+          selector: "#card-cvv"
+          value: "123"
+      
+      - name: Place order
+        uses: element/click
+        with:
+          selector: "[data-testid='place-order']"
+      
+      - name: Wait for confirmation
+        uses: wait/selector
+        with:
+          selector: ".order-confirmation"
+          timeout: 15000
+      
+      - name: Verify success message
+        uses: assert/text_contains
+        with:
+          selector: ".order-confirmation h1"
+          text: "Thank you"
+      
+      - name: Get order number
+        id: order_details
+        uses: element/text
+        with:
+          selector: ".order-number"
+      
+      - name: Final screenshot
+        uses: browser/screenshot
+        with:
+          path: "screenshots/order-confirmed.png"
+          fullPage: true

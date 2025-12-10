@@ -1,0 +1,10 @@
+name: e2e-tests
+depends_on: [setup]
+
+jobs:
+  test:
+    steps:
+      - name: Run E2E tests
+        uses: wait/ms
+        with:
+          duration: 200

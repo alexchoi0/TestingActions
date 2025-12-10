@@ -1,0 +1,10 @@
+name: api-tests
+depends_on: [setup]
+
+jobs:
+  test:
+    steps:
+      - name: Run API tests
+        uses: wait/ms
+        with:
+          duration: 50

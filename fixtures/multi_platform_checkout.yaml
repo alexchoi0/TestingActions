@@ -1,0 +1,455 @@
+# Multi-Platform E-Commerce Checkout Test
+#
+# This workflow demonstrates all 7 platforms working together:
+# - Playwright: Browser UI automation
+# - Next.js: Server actions, API routes, database
+# - Node.js: Custom JS functions, data generation
+# - Rust: High-performance validation, cryptography
+# - Python: ML fraud detection, analytics
+# - Java: Payment gateway integration
+# - Web: External API calls (Stripe, etc.)
+
+name: e2e-checkout-flow
+on:
+  manual: true
+
+# Global environment
+env:
+  BASE_URL: "http://localhost:3000"
+  API_BASE: "https://api.payments.example.com"
+  TEST_USER_EMAIL: "test@example.com"
+
+# Configure all platforms
+platforms:
+  playwright:
+    browser: chromium
+    headless: true
+    viewport:
+      width: 1920
+      height: 1080
+    timeout: 30000
+
+  nextjs:
+    mode: spawn
+    project_dir: ./my-nextjs-app
+    port: 3000
+    hooks:
+      before_all: setup_test_db
+      after_all: cleanup_test_db
+      before_each: begin_transaction
+      after_each: rollback_transaction
+
+  nodejs:
+    registry: ./test-helpers/index.js
+    hooks:
+      before_all: initializeTestData
+
+  rust:
+    binary: ./target/release/test-validators
+    hooks:
+      before_each: clear_validation_cache
+
+  python:
+    script: ./ml-services/fraud_detector.py
+    venv: ./ml-services/.venv
+    hooks:
+      before_all: load_ml_models
+
+  java:
+    jar: ./payment-gateway/target/payment-mock.jar
+    main_class: com.example.PaymentMockServer
+    hooks:
+      before_all: startMockServer
+      after_all: stopMockServer
+
+  web:
+    base_url: "https://api.stripe.com/v1"
+    timeout: 10000
+    auth:
+      type: bearer
+      token: ${{ secrets.STRIPE_TEST_KEY }}
+    retry:
+      max_attempts: 3
+      initial_delay: 1000
+      max_delay: 5000
+      retry_on_status: [429, 500, 502, 503]
+
+jobs:
+  # Job 1: Setup test data across platforms
+  setup:
+    name: Initialize Test Environment
+    steps:
+      # Node.js: Generate test user data
+      - name: Generate test user
+        platform: nodejs
+        uses: fn/call
+        id: gen_user
+        with:
+          function: generateTestUser
+          args:
+            email: ${{ env.TEST_USER_EMAIL }}
+            tier: premium
+
+      # Rust: Generate secure password hash
+      - name: Hash password
+        platform: rust
+        uses: rs/call
+        id: hash_pw
+        with:
+          function: hash_password
+          args:
+            password: "TestPassword123!"
+            algorithm: argon2id
+
+      # Next.js: Seed user in database
+      - name: Create user in database
+        platform: nextjs
+        uses: db/seed
+        id: create_user
+        with:
+          table: users
+          data:
+            - email: ${{ steps.gen_user.outputs.email }}
+              name: ${{ steps.gen_user.outputs.name }}
+              password_hash: ${{ steps.hash_pw.outputs.hash }}
+              tier: premium
+              balance: 1000.00
+
+      # Node.js: Generate product catalog
+      - name: Generate products
+        platform: nodejs
+        uses: fn/call
+        id: gen_products
+        with:
+          function: generateProductCatalog
+          args:
+            count: 10
+            categories: ["electronics", "clothing", "books"]
+
+      # Next.js: Seed products
+      - name: Seed products
+        platform: nextjs
+        uses: db/seed
+        with:
+          table: products
+          data: ${{ steps.gen_products.outputs.products }}
+
+  # Job 2: UI checkout flow with browser
+  checkout_ui:
+    name: Browser Checkout Flow
+    needs: [setup]
+    steps:
+      # Playwright: Navigate to store
+      - name: Open store homepage
+        platform: playwright
+        uses: page/goto
+        with:
+          url: ${{ env.BASE_URL }}
+
+      # Playwright: Login
+      - name: Click login button
+        platform: playwright
+        uses: element/click
+        with:
+          selector: "[data-testid='login-button']"
+
+      - name: Fill email
+        platform: playwright
+        uses: element/fill
+        with:
+          selector: "#email"
+          value: ${{ env.TEST_USER_EMAIL }}
+
+      - name: Fill password
+        platform: playwright
+        uses: element/fill
+        with:
+          selector: "#password"
+          value: "TestPassword123!"
+
+      - name: Submit login
+        platform: playwright
+        uses: element/click
+        with:
+          selector: "[data-testid='submit-login']"
+
+      # Playwright: Wait for dashboard
+      - name: Wait for dashboard
+        platform: playwright
+        uses: wait/selector
+        with:
+          selector: "[data-testid='user-dashboard']"
+          timeout: 5000
+
+      # Playwright: Add item to cart
+      - name: Navigate to products
+        platform: playwright
+        uses: page/goto
+        with:
+          url: ${{ env.BASE_URL }}/products
+
+      - name: Add first product to cart
+        platform: playwright
+        uses: element/click
+        with:
+          selector: "[data-testid='product-card']:first-child [data-testid='add-to-cart']"
+
+      # Playwright: Go to checkout
+      - name: Go to cart
+        platform: playwright
+        uses: element/click
+        with:
+          selector: "[data-testid='cart-icon']"
+
+      - name: Proceed to checkout
+        platform: playwright
+        uses: element/click
+        with:
+          selector: "[data-testid='checkout-button']"
+
+      # Playwright: Fill shipping info
+      - name: Fill shipping address
+        platform: playwright
+        uses: element/fill
+        with:
+          selector: "#shipping-address"
+          value: "123 Test Street, Test City, TC 12345"
+
+      # Playwright: Get order total
+      - name: Extract order total
+        platform: playwright
+        uses: element/text
+        id: order_total
+        with:
+          selector: "[data-testid='order-total']"
+
+      # Playwright: Screenshot before payment
+      - name: Screenshot checkout page
+        platform: playwright
+        uses: browser/screenshot
+        with:
+          path: ./screenshots/checkout-before-payment.png
+
+  # Job 3: Validate and process payment
+  payment:
+    name: Payment Processing
+    needs: [checkout_ui]
+    steps:
+      # Rust: Validate order data integrity
+      - name: Validate order checksum
+        platform: rust
+        uses: rs/call
+        id: validate_order
+        with:
+          function: validate_order_integrity
+          args:
+            order_id: ${{ needs.checkout_ui.outputs.order_id }}
+            expected_total: ${{ needs.checkout_ui.outputs.order_total }}
+
+      # Rust: Assert validation passed
+      - name: Assert order valid
+        platform: rust
+        uses: assert/custom
+        with:
+          assertion: order_integrity_check
+          params:
+            validation_result: ${{ steps.validate_order.outputs.result }}
+
+      # Python: Run fraud detection
+      - name: Check for fraud
+        platform: python
+        uses: py/call
+        id: fraud_check
+        with:
+          function: analyze_transaction
+          args:
+            user_id: ${{ needs.setup.outputs.user_id }}
+            amount: ${{ needs.checkout_ui.outputs.order_total }}
+            shipping_address: "123 Test Street, Test City, TC 12345"
+
+      # Python: Assert fraud score is acceptable
+      - name: Assert low fraud risk
+        platform: python
+        uses: assert/custom
+        with:
+          assertion: fraud_score_acceptable
+          params:
+            score: ${{ steps.fraud_check.outputs.risk_score }}
+            threshold: 0.3
+
+      # Java: Process payment through mock gateway
+      - name: Process payment
+        platform: java
+        uses: java/call
+        id: payment
+        with:
+          method: processPayment
+          args:
+            amount: ${{ needs.checkout_ui.outputs.order_total }}
+            currency: USD
+            customer_id: ${{ needs.setup.outputs.user_id }}
+            idempotency_key: ${{ needs.checkout_ui.outputs.order_id }}
+
+      # Web: Verify payment with Stripe API
+      - name: Verify with Stripe
+        platform: web
+        uses: web/get
+        id: stripe_verify
+        with:
+          path: /charges/${{ steps.payment.outputs.charge_id }}
+
+      # Assert payment succeeded
+      - name: Assert payment status
+        uses: assert/equals
+        with:
+          actual: ${{ steps.stripe_verify.outputs.body.status }}
+          expected: "succeeded"
+
+  # Job 4: Post-payment verification
+  verify:
+    name: Post-Payment Verification
+    needs: [payment]
+    steps:
+      # Next.js: Verify order status in database
+      - name: Query order status
+        platform: nextjs
+        uses: db/query
+        id: order_status
+        with:
+          query: "SELECT status, payment_id FROM orders WHERE id = $1"
+          params:
+            - ${{ needs.checkout_ui.outputs.order_id }}
+
+      # Assert order is confirmed
+      - name: Assert order confirmed
+        uses: assert/equals
+        with:
+          actual: ${{ steps.order_status.outputs.rows[0].status }}
+          expected: "confirmed"
+
+      # Next.js: Call server action to send confirmation email
+      - name: Send confirmation email
+        platform: nextjs
+        uses: action/invoke
+        id: send_email
+        with:
+          name: sendOrderConfirmation
+          args:
+            - ${{ needs.checkout_ui.outputs.order_id }}
+            - ${{ env.TEST_USER_EMAIL }}
+
+      # Node.js: Verify email was queued
+      - name: Check email queue
+        platform: nodejs
+        uses: fn/call
+        id: email_check
+        with:
+          function: getEmailFromQueue
+          args:
+            to: ${{ env.TEST_USER_EMAIL }}
+            type: order_confirmation
+
+      - name: Assert email queued
+        uses: assert/exists
+        with:
+          value: ${{ steps.email_check.outputs.email_id }}
+
+      # Web: Call external inventory API
+      - name: Update external inventory
+        platform: web
+        uses: web/post
+        with:
+          path: https://inventory.example.com/api/v1/reserve
+          body:
+            order_id: ${{ needs.checkout_ui.outputs.order_id }}
+            items: ${{ needs.checkout_ui.outputs.cart_items }}
+          headers:
+            X-API-Key: ${{ secrets.INVENTORY_API_KEY }}
+
+      # Playwright: Verify confirmation page
+      - name: Check confirmation page
+        platform: playwright
+        uses: wait/selector
+        with:
+          selector: "[data-testid='order-confirmation']"
+
+      - name: Get confirmation number
+        platform: playwright
+        uses: element/text
+        id: confirmation
+        with:
+          selector: "[data-testid='confirmation-number']"
+
+      # Final screenshot
+      - name: Screenshot confirmation
+        platform: playwright
+        uses: browser/screenshot
+        with:
+          path: ./screenshots/order-confirmation.png
+
+  # Job 5: Cleanup and reporting
+  cleanup:
+    name: Cleanup & Report
+    needs: [verify]
+    if: always()
+    steps:
+      # Node.js: Generate test report
+      - name: Generate report
+        platform: nodejs
+        uses: fn/call
+        id: report
+        with:
+          function: generateTestReport
+          args:
+            run_id: ${{ github.run_id }}
+            jobs:
+              - setup
+              - checkout_ui
+              - payment
+              - verify
+
+      # Python: Analyze test metrics
+      - name: Analyze performance
+        platform: python
+        uses: py/call
+        id: perf_analysis
+        with:
+          function: analyze_test_performance
+          args:
+            timings: ${{ steps.report.outputs.timings }}
+
+      # Next.js: Clean up test data
+      - name: Delete test user
+        platform: nextjs
+        uses: db/cleanup
+        with:
+          table: users
+          where:
+            email: ${{ env.TEST_USER_EMAIL }}
+
+      - name: Delete test orders
+        platform: nextjs
+        uses: db/cleanup
+        with:
+          table: orders
+          where:
+            user_email: ${{ env.TEST_USER_EMAIL }}
+
+      # Rust: Clear any cached validation data
+      - name: Clear validation cache
+        platform: rust
+        uses: rs/call
+        with:
+          function: clear_cache
+          args:
+            pattern: "order:*"
+
+      # Java: Record metrics
+      - name: Record payment metrics
+        platform: java
+        uses: java/call
+        with:
+          method: recordMetrics
+          args:
+            test_run: ${{ github.run_id }}
+            success: true

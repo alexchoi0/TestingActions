@@ -1,0 +1,317 @@
+# Web/HTTP API Workflow
+#
+# Demonstrates Web platform features:
+# - REST API calls (GET, POST, PUT, PATCH, DELETE)
+# - Authentication (Bearer, Basic, API Key)
+# - Retry with backoff
+# - Response assertions
+
+name: web-api-test
+on:
+  manual: true
+
+platform: web
+
+platforms:
+  web:
+    base_url: "https://api.example.com/v1"
+    timeout: 30000
+    headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+      X-Client-Version: "1.0.0"
+    auth:
+      type: bearer
+      token: ${{ secrets.API_TOKEN }}
+    retry:
+      max_attempts: 3
+      initial_delay: 1000
+      max_delay: 10000
+      retry_on_status: [429, 500, 502, 503, 504]
+    follow_redirects: true
+    validate_ssl: true
+
+env:
+  TEST_USER_ID: "usr_test_123"
+
+jobs:
+  crud_operations:
+    name: REST CRUD Operations
+    steps:
+      # CREATE - POST request
+      - name: Create resource
+        uses: web/post
+        id: create
+        with:
+          path: /users
+          body:
+            email: "webtest@example.com"
+            name: "Web Test User"
+            role: "member"
+
+      - name: Assert created
+        uses: assert/equals
+        with:
+          actual: ${{ steps.create.outputs.status }}
+          expected: "201"
+
+      # READ - GET request
+      - name: Get resource
+        uses: web/get
+        id: get
+        with:
+          path: /users/${{ steps.create.outputs.body.id }}
+
+      - name: Assert retrieved
+        uses: assert/equals
+        with:
+          actual: ${{ steps.get.outputs.body.email }}
+          expected: "webtest@example.com"
+
+      # UPDATE - PUT request (full update)
+      - name: Update resource
+        uses: web/put
+        id: update
+        with:
+          path: /users/${{ steps.create.outputs.body.id }}
+          body:
+            email: "webtest@example.com"
+            name: "Updated Web User"
+            role: "admin"
+
+      - name: Assert updated
+        uses: assert/equals
+        with:
+          actual: ${{ steps.update.outputs.body.name }}
+          expected: "Updated Web User"
+
+      # PATCH - Partial update
+      - name: Patch resource
+        uses: web/patch
+        id: patch
+        with:
+          path: /users/${{ steps.create.outputs.body.id }}
+          body:
+            role: "superadmin"
+
+      # DELETE - Remove resource
+      - name: Delete resource
+        uses: web/delete
+        id: delete
+        with:
+          path: /users/${{ steps.create.outputs.body.id }}
+
+      - name: Assert deleted
+        uses: assert/equals
+        with:
+          actual: ${{ steps.delete.outputs.status }}
+          expected: "204"
+
+  query_parameters:
+    name: Query Parameter Handling
+    steps:
+      # GET with query params
+      - name: Search with filters
+        uses: web/get
+        id: search
+        with:
+          path: /users
+          query:
+            role: admin
+            status: active
+            limit: "10"
+            offset: "0"
+            sort: "created_at"
+            order: "desc"
+
+      - name: Assert results
+        uses: assert/custom
+        with:
+          assertion: array_not_empty
+          params:
+            array: ${{ steps.search.outputs.body.data }}
+
+      # Pagination
+      - name: Get page 1
+        uses: web/get
+        id: page1
+        with:
+          path: /products
+          query:
+            page: "1"
+            per_page: "20"
+
+      - name: Get page 2
+        uses: web/get
+        id: page2
+        with:
+          path: /products
+          query:
+            page: "2"
+            per_page: "20"
+
+  custom_headers:
+    name: Custom Headers
+    steps:
+      # Request with custom headers
+      - name: Request with custom headers
+        uses: web/get
+        id: custom
+        with:
+          path: /protected/resource
+          headers:
+            X-Custom-Header: "custom-value"
+            X-Request-ID: "req-123-456"
+            X-Correlation-ID: "corr-789"
+
+      # Conditional request
+      - name: Conditional GET
+        uses: web/get
+        id: conditional
+        with:
+          path: /resources/123
+          headers:
+            If-None-Match: '"abc123"'
+            If-Modified-Since: "Wed, 21 Oct 2024 07:28:00 GMT"
+
+  different_auth:
+    name: Different Auth Methods
+    steps:
+      # Basic auth (override default)
+      - name: Basic auth request
+        uses: web/request
+        id: basic
+        with:
+          method: GET
+          path: /legacy/endpoint
+          headers:
+            Authorization: "Basic dXNlcjpwYXNz"
+
+      # API key auth
+      - name: API key auth
+        uses: web/get
+        id: apikey
+        with:
+          path: /external/service
+          headers:
+            X-API-Key: ${{ secrets.EXTERNAL_API_KEY }}
+
+  error_handling:
+    name: Error Response Handling
+    steps:
+      # Expect 404
+      - name: Get non-existent resource
+        uses: web/get
+        id: not_found
+        with:
+          path: /users/non-existent-id
+        continue_on_error: true
+
+      - name: Assert 404
+        uses: assert/equals
+        with:
+          actual: ${{ steps.not_found.outputs.status }}
+          expected: "404"
+
+      # Expect validation error
+      - name: Create invalid resource
+        uses: web/post
+        id: validation_error
+        with:
+          path: /users
+          body:
+            email: "invalid-email"
+        continue_on_error: true
+
+      - name: Assert 400
+        uses: assert/equals
+        with:
+          actual: ${{ steps.validation_error.outputs.status }}
+          expected: "400"
+
+  file_operations:
+    name: File Upload/Download
+    steps:
+      # Upload file (multipart would need special handling)
+      - name: Upload document metadata
+        uses: web/post
+        id: upload
+        with:
+          path: /documents
+          body:
+            filename: "report.pdf"
+            content_type: "application/pdf"
+            size: 102400
+
+      # Download file info
+      - name: Get document
+        uses: web/get
+        id: download
+        with:
+          path: /documents/${{ steps.upload.outputs.body.id }}
+
+  webhook_simulation:
+    name: Webhook Endpoints
+    steps:
+      # Simulate incoming webhook
+      - name: Stripe webhook
+        uses: web/post
+        id: stripe_webhook
+        with:
+          path: /webhooks/stripe
+          body:
+            id: "evt_123"
+            type: "payment_intent.succeeded"
+            data:
+              object:
+                id: "pi_123"
+                amount: 9999
+                currency: "usd"
+          headers:
+            Stripe-Signature: "t=123,v1=abc..."
+
+      # GitHub webhook
+      - name: GitHub webhook
+        uses: web/post
+        id: github_webhook
+        with:
+          path: /webhooks/github
+          body:
+            action: "opened"
+            pull_request:
+              number: 123
+              title: "Feature: Add new endpoint"
+          headers:
+            X-GitHub-Event: "pull_request"
+            X-Hub-Signature-256: "sha256=..."
+
+  response_assertions:
+    name: Response Assertions
+    steps:
+      - name: Get API status
+        uses: web/get
+        id: status
+        with:
+          path: /health
+
+      - name: Assert healthy
+        uses: assert/equals
+        with:
+          actual: ${{ steps.status.outputs.body.status }}
+          expected: "healthy"
+
+      - name: Assert response time
+        uses: assert/custom
+        with:
+          assertion: response_time_under
+          params:
+            actual_ms: ${{ steps.status.outputs.elapsed_ms }}
+            max_ms: 500
+
+      - name: Assert headers present
+        uses: assert/custom
+        with:
+          assertion: header_present
+          params:
+            headers: ${{ steps.status.outputs.headers }}
+            expected: "x-request-id"

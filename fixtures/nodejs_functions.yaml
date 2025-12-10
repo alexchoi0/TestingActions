@@ -1,0 +1,190 @@
+# Node.js Function Registry Workflow
+#
+# Demonstrates Node.js platform features:
+# - Custom function calls
+# - Context management
+# - Mocking
+# - Lifecycle hooks
+
+name: nodejs-function-test
+on:
+  manual: true
+
+platform: nodejs
+
+platforms:
+  nodejs:
+    registry: ./test-helpers/registry.js
+    typescript: true
+    working_dir: ./tests
+    hooks:
+      before_all: setupTestEnvironment
+      after_all: teardownTestEnvironment
+      before_each: resetMocks
+      after_each: collectMetrics
+
+env:
+  TEST_MODE: "integration"
+
+jobs:
+  data_generation:
+    name: Data Generation Functions
+    steps:
+      # Generate fake user data
+      - name: Generate users
+        uses: fn/call
+        id: users
+        with:
+          function: generateUsers
+          args:
+            count: 10
+            locale: "en-US"
+
+      - name: Assert users generated
+        uses: assert/equals
+        with:
+          actual: ${{ steps.users.outputs.count }}
+          expected: "10"
+
+      # Generate products
+      - name: Generate products
+        uses: fn/call
+        id: products
+        with:
+          function: generateProducts
+          args:
+            categories: ["electronics", "clothing"]
+            priceRange:
+              min: 10
+              max: 1000
+
+      # Transform data
+      - name: Calculate totals
+        uses: fn/call
+        id: totals
+        with:
+          function: calculateOrderTotals
+          args:
+            items: ${{ steps.products.outputs.items }}
+            taxRate: 0.08
+            discount: 0.1
+
+  context_operations:
+    name: Context Management
+    needs: [data_generation]
+    steps:
+      # Store data in context
+      - name: Store user in context
+        uses: ctx/set
+        with:
+          key: "current_user"
+          value:
+            id: 123
+            email: "test@example.com"
+            permissions: ["read", "write"]
+
+      - name: Get user from context
+        uses: ctx/get
+        id: user
+        with:
+          key: "current_user"
+
+      - name: Assert user stored
+        uses: assert/equals
+        with:
+          actual: ${{ steps.user.outputs.value.email }}
+          expected: "test@example.com"
+
+      # Clear specific context
+      - name: Clear user context
+        uses: ctx/clear
+        with:
+          pattern: "current_*"
+
+  mocking:
+    name: Mock External Services
+    steps:
+      # Set up mocks
+      - name: Mock payment API
+        uses: mock/set
+        with:
+          target: "paymentService.charge"
+          mock_value:
+            success: true
+            transactionId: "mock-txn-123"
+            amount: 99.99
+
+      - name: Mock email service
+        uses: mock/set
+        with:
+          target: "emailService.send"
+          mock_value:
+            sent: true
+            messageId: "mock-msg-456"
+
+      # Call function that uses mocked services
+      - name: Process order with mocks
+        uses: fn/call
+        id: order
+        with:
+          function: processOrder
+          args:
+            orderId: "order-789"
+            userId: "user-123"
+
+      - name: Assert mocked payment used
+        uses: assert/equals
+        with:
+          actual: ${{ steps.order.outputs.transactionId }}
+          expected: "mock-txn-123"
+
+      # Clear all mocks
+      - name: Clear mocks
+        uses: mock/clear
+
+  custom_assertions:
+    name: Custom Assertions
+    steps:
+      - name: Setup test data
+        uses: fn/call
+        id: setup
+        with:
+          function: setupTestScenario
+          args:
+            scenario: "user_registration"
+
+      - name: Assert user valid
+        uses: assert/custom
+        with:
+          assertion: isValidUser
+          params:
+            userId: ${{ steps.setup.outputs.userId }}
+            expectedRole: "member"
+
+      - name: Assert email format
+        uses: assert/custom
+        with:
+          assertion: isValidEmail
+          params:
+            email: ${{ steps.setup.outputs.email }}
+
+  lifecycle_hooks:
+    name: Hook Demonstration
+    steps:
+      # Hooks run automatically, but we can also call them manually
+      - name: Call setup hook
+        uses: hook/call
+        with:
+          hook: customSetup
+
+      - name: Run test logic
+        uses: fn/call
+        with:
+          function: runTestLogic
+          args:
+            testName: "hook_demo"
+
+      - name: Call teardown hook
+        uses: hook/call
+        with:
+          hook: customTeardown

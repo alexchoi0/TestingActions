@@ -1,0 +1,16 @@
+name: build
+on:
+  manual: true
+
+jobs:
+  cargo-build:
+    steps:
+      - name: Build release
+        uses: bash/exec
+        with:
+          command: cargo build --release
+
+      - name: Check binary exists
+        uses: bash/exec
+        with:
+          command: test -f target/release/testing-actions
