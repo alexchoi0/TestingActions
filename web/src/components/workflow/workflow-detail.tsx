@@ -6,17 +6,19 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import type { Workflow, Job, Step, JobStatus, StepStatus } from '@/types/workflow';
 
-const statusVariant: Record<JobStatus | StepStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+const statusVariant: Record<JobStatus | StepStatus | 'paused', 'default' | 'secondary' | 'destructive' | 'outline'> = {
   pending: 'outline',
   running: 'default',
+  paused: 'secondary',
   success: 'secondary',
   failed: 'destructive',
   skipped: 'outline',
 };
 
-const statusLabel: Record<JobStatus | StepStatus, string> = {
+const statusLabel: Record<JobStatus | StepStatus | 'paused', string> = {
   pending: 'Pending',
   running: 'Running',
+  paused: 'Paused',
   success: 'Success',
   failed: 'Failed',
   skipped: 'Skipped',

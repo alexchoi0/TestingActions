@@ -35,6 +35,11 @@ struct Run {
     started_at: String,
     completed_at: Option<String>,
     event_count: i32,
+    is_paused: bool,
+    paused_at: Option<String>,
+    current_workflow: Option<String>,
+    current_job: Option<String>,
+    current_step: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +132,18 @@ enum Commands {
         /// The run ID
         run_id: String,
     },
+
+    /// Pause a running workflow
+    Pause {
+        /// The run ID
+        run_id: String,
+    },
+
+    /// Resume a paused workflow
+    Resume {
+        /// The run ID
+        run_id: String,
+    },
 }
 
 async fn graphql_query(query: &str) -> anyhow::Result<serde_json::Value> {
@@ -152,6 +169,7 @@ fn status_icon(status: &str) -> &'static str {
         "SUCCESS" => "✓",
         "FAILED" => "✗",
         "RUNNING" => "●",
+        "PAUSED" => "⏸",
         "PENDING" => "○",
         "CANCELLED" => "⊘",
         "SKIPPED" => "⊖",
@@ -185,6 +203,11 @@ async fn cmd_runs(limit: i32, json_output: bool) -> anyhow::Result<()> {
                 startedAt
                 completedAt
                 eventCount
+                isPaused
+                pausedAt
+                currentWorkflow
+                currentJob
+                currentStep
             }}
         }}"#,
         limit
@@ -210,6 +233,21 @@ async fn cmd_runs(limit: i32, json_output: bool) -> anyhow::Result<()> {
             println!("    Dir: {}", run.workflows_dir);
             println!("    Started: {}{}", format_timestamp(&run.started_at), completed);
             println!("    Events: {}", run.event_count);
+            if run.is_paused {
+                if let Some(ref paused_at) = run.paused_at {
+                    println!("    Paused: {}", format_timestamp(paused_at));
+                }
+                if let Some(ref wf) = run.current_workflow {
+                    print!("    Position: {}", wf);
+                    if let Some(ref job) = run.current_job {
+                        print!(" > {}", job);
+                    }
+                    if let Some(step) = run.current_step {
+                        print!(" > step {}", step);
+                    }
+                    println!();
+                }
+            }
             println!();
         }
     }
@@ -227,6 +265,11 @@ async fn cmd_run(run_id: &str, json_output: bool) -> anyhow::Result<()> {
                 startedAt
                 completedAt
                 eventCount
+                isPaused
+                pausedAt
+                currentWorkflow
+                currentJob
+                currentStep
             }}
         }}"#,
         run_id
@@ -252,6 +295,21 @@ async fn cmd_run(run_id: &str, json_output: bool) -> anyhow::Result<()> {
             println!("Completed: {}", format_timestamp(completed));
         }
         println!("Events: {}", run.event_count);
+        if run.is_paused {
+            if let Some(ref paused_at) = run.paused_at {
+                println!("Paused: {}", format_timestamp(paused_at));
+            }
+            if let Some(ref wf) = run.current_workflow {
+                print!("Position: {}", wf);
+                if let Some(ref job) = run.current_job {
+                    print!(" > {}", job);
+                }
+                if let Some(step) = run.current_step {
+                    print!(" > step {}", step);
+                }
+                println!();
+            }
+        }
     }
 
     Ok(())
@@ -444,6 +502,46 @@ async fn cmd_stop(run_id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn cmd_pause(run_id: &str) -> anyhow::Result<()> {
+    let query = format!(
+        r#"mutation {{
+            pauseRun(runId: "{}")
+        }}"#,
+        run_id
+    );
+
+    let data = graphql_query(&query).await?;
+    let result = data["pauseRun"].as_bool().unwrap_or(false);
+
+    if result {
+        println!("Pause command sent to run: {}", run_id);
+    } else {
+        println!("Failed to pause run: {}", run_id);
+    }
+
+    Ok(())
+}
+
+async fn cmd_resume(run_id: &str) -> anyhow::Result<()> {
+    let query = format!(
+        r#"mutation {{
+            resumeRun(runId: "{}")
+        }}"#,
+        run_id
+    );
+
+    let data = graphql_query(&query).await?;
+    let result = data["resumeRun"].as_bool().unwrap_or(false);
+
+    if result {
+        println!("Resume command sent to run: {}", run_id);
+    } else {
+        println!("Failed to resume run: {}", run_id);
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -455,6 +553,8 @@ async fn main() -> ExitCode {
         Commands::Events { run_id, json } => cmd_events(&run_id, json).await,
         Commands::Watch { run_id, timeout, json } => cmd_watch(&run_id, timeout, json).await,
         Commands::Stop { run_id } => cmd_stop(&run_id).await,
+        Commands::Pause { run_id } => cmd_pause(&run_id).await,
+        Commands::Resume { run_id } => cmd_resume(&run_id).await,
     };
 
     match result {

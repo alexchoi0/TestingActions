@@ -106,6 +106,7 @@ export default function Home() {
   const [workflows, setWorkflows] = useState<Record<string, Workflow>>(mockWorkflows);
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
   const [runId] = useState('run-abc123');
 
   useEffect(() => {
@@ -132,21 +133,62 @@ export default function Home() {
 
   const handleRun = useCallback(() => {
     setIsRunning(true);
+    setIsPaused(false);
     // TODO: Connect to backend API
   }, []);
 
   const handleStop = useCallback(() => {
     setIsRunning(false);
+    setIsPaused(false);
     // TODO: Connect to backend API
   }, []);
+
+  const handlePause = useCallback(async () => {
+    try {
+      const response = await fetch('/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `mutation { pauseRun(runId: "${runId}") }`
+        })
+      });
+      const data = await response.json();
+      if (data.data?.pauseRun) {
+        setIsPaused(true);
+      }
+    } catch (error) {
+      console.error('Failed to pause run:', error);
+    }
+  }, [runId]);
+
+  const handleResume = useCallback(async () => {
+    try {
+      const response = await fetch('/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `mutation { resumeRun(runId: "${runId}") }`
+        })
+      });
+      const data = await response.json();
+      if (data.data?.resumeRun) {
+        setIsPaused(false);
+      }
+    } catch (error) {
+      console.error('Failed to resume run:', error);
+    }
+  }, [runId]);
 
   return (
     <div className="h-screen flex flex-col bg-background">
       <RunControls
         isRunning={isRunning}
+        isPaused={isPaused}
         runId={runId}
         onRun={handleRun}
         onStop={handleStop}
+        onPause={handlePause}
+        onResume={handleResume}
       />
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 border-r">

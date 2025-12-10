@@ -16,6 +16,12 @@ model Run {
   configJson   String?   @map("config_json")
   agentToken   String?   @map("agent_token")
 
+  isPaused        Boolean   @default(false) @map("is_paused")
+  pausedAt        DateTime? @map("paused_at")
+  currentWorkflow String?   @map("current_workflow")
+  currentJob      String?   @map("current_job")
+  currentStep     Int?      @map("current_step")
+
   workflowResults WorkflowResult[]
   jobResults      JobResult[]
   stepResults     StepResult[]

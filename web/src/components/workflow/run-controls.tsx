@@ -5,12 +5,15 @@ import { Badge } from '@/components/ui/badge';
 
 interface RunControlsProps {
   isRunning: boolean;
+  isPaused: boolean;
   runId?: string;
   onRun: () => void;
   onStop: () => void;
+  onPause: () => void;
+  onResume: () => void;
 }
 
-export default function RunControls({ isRunning, runId, onRun, onStop }: RunControlsProps) {
+export default function RunControls({ isRunning, isPaused, runId, onRun, onStop, onPause, onResume }: RunControlsProps) {
   return (
     <div className="flex items-center justify-between p-4 border-b bg-background">
       <div className="flex items-center gap-4">
@@ -20,12 +23,28 @@ export default function RunControls({ isRunning, runId, onRun, onStop }: RunCont
             {runId}
           </Badge>
         )}
+        {isPaused && (
+          <Badge variant="secondary">
+            Paused
+          </Badge>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {isRunning ? (
-          <Button variant="destructive" onClick={onStop}>
-            Stop
-          </Button>
+          <>
+            {isPaused ? (
+              <Button variant="default" onClick={onResume}>
+                Resume
+              </Button>
+            ) : (
+              <Button variant="secondary" onClick={onPause}>
+                Pause
+              </Button>
+            )}
+            <Button variant="destructive" onClick={onStop}>
+              Stop
+            </Button>
+          </>
         ) : (
           <Button onClick={onRun}>
             Run Workflows

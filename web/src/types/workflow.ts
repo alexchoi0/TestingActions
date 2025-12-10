@@ -1,4 +1,4 @@
-export type WorkflowStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+export type WorkflowStatus = 'pending' | 'running' | 'paused' | 'success' | 'failed' | 'skipped';
 
 export type JobStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
 

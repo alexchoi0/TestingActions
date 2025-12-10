@@ -21,6 +21,11 @@ interface RunInfo {
   completedAt?: Date
   events: RunEvent[]
   agentToken?: string
+  isPaused: boolean
+  pausedAt?: Date
+  currentWorkflow?: string
+  currentJob?: string
+  currentStep?: number
 }
 
 class AppState {
@@ -42,7 +47,12 @@ class AppState {
         workflowsDir: run.workflowsDir,
         startedAt: run.startedAt,
         completedAt: run.completedAt ?? undefined,
-        events: []
+        events: [],
+        isPaused: run.isPaused,
+        pausedAt: run.pausedAt ?? undefined,
+        currentWorkflow: run.currentWorkflow ?? undefined,
+        currentJob: run.currentJob ?? undefined,
+        currentStep: run.currentStep ?? undefined
       })
     }
 
@@ -56,7 +66,8 @@ class AppState {
       workflowsDir,
       startedAt,
       events: [],
-      agentToken
+      agentToken,
+      isPaused: false
     }
 
     this.runs.set(runId, runInfo)
@@ -67,7 +78,8 @@ class AppState {
         status: 'pending',
         workflowsDir,
         startedAt,
-        agentToken
+        agentToken,
+        isPaused: false
       }
     })
 
@@ -91,6 +103,15 @@ class AppState {
       if (run) {
         if (event.eventType === 'RUN_STARTED') {
           run.status = 'running'
+        }
+        if (event.workflowName) {
+          run.currentWorkflow = event.workflowName
+        }
+        if (event.jobName) {
+          run.currentJob = event.jobName
+        }
+        if (event.stepIndex !== undefined && event.stepIndex !== null) {
+          run.currentStep = event.stepIndex
         }
         run.events.push(event)
       }
@@ -134,6 +155,54 @@ class AppState {
     const sorted = [...this.runs.values()]
       .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())
     return sorted.slice(offset, offset + limit)
+  }
+
+  async pauseRun(runId: string): Promise<boolean> {
+    const run = this.runs.get(runId)
+    if (!run || run.status !== 'running') {
+      return false
+    }
+
+    const pausedAt = new Date()
+    run.isPaused = true
+    run.pausedAt = pausedAt
+    run.status = 'paused'
+
+    await prisma.run.update({
+      where: { id: runId },
+      data: {
+        isPaused: true,
+        pausedAt,
+        status: 'paused',
+        currentWorkflow: run.currentWorkflow,
+        currentJob: run.currentJob,
+        currentStep: run.currentStep
+      }
+    })
+
+    return true
+  }
+
+  async resumeRun(runId: string): Promise<boolean> {
+    const run = this.runs.get(runId)
+    if (!run || !run.isPaused) {
+      return false
+    }
+
+    run.isPaused = false
+    run.pausedAt = undefined
+    run.status = 'running'
+
+    await prisma.run.update({
+      where: { id: runId },
+      data: {
+        isPaused: false,
+        pausedAt: null,
+        status: 'running'
+      }
+    })
+
+    return true
   }
 }
 
