@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Run {
-  id           String    @id
+  id           String    @id @default(uuid())
   status       String    @default("pending")
   workflowsDir String    @map("workflows_dir")
   startedAt    DateTime  @map("started_at")
