@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { v4 as uuidv4 } from 'uuid';
 import RunControls from '@/components/workflow/run-controls';
 import WorkflowDetail from '@/components/workflow/workflow-detail';
 import { useSession } from '@/lib/auth-client';
@@ -100,14 +101,6 @@ const mockWorkflows: Record<string, Workflow> = {
   },
 };
 
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
-
 export default function Home() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
@@ -115,7 +108,7 @@ export default function Home() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
-  const runId = useMemo(() => generateUUID(), []);
+  const runId = useMemo(() => uuidv4(), []);
 
   useEffect(() => {
     if (!isPending && !session) {
