@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import RunControls from '@/components/workflow/run-controls';
 import WorkflowDetail from '@/components/workflow/workflow-detail';
+import { useSession } from '@/lib/auth-client';
 import type { Workflow, RunResult } from '@/types/workflow';
 
 const WorkflowDAG = dynamic(() => import('@/components/workflow/workflow-dag'), {
@@ -99,10 +101,30 @@ const mockWorkflows: Record<string, Workflow> = {
 };
 
 export default function Home() {
+  const router = useRouter();
+  const { data: session, isPending } = useSession();
   const [workflows, setWorkflows] = useState<Record<string, Workflow>>(mockWorkflows);
   const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(true);
   const [runId] = useState('run-abc123');
+
+  useEffect(() => {
+    if (!isPending && !session) {
+      router.push('/login');
+    }
+  }, [session, isPending, router]);
+
+  if (isPending) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return null;
+  }
 
   const handleWorkflowSelect = useCallback((workflowId: string) => {
     setSelectedWorkflow(workflowId);
