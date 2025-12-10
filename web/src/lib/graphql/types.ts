@@ -2,6 +2,7 @@ export const typeDefs = /* GraphQL */ `
   enum Status {
     PENDING
     RUNNING
+    PAUSED
     SUCCESS
     FAILED
     CANCELLED
@@ -32,6 +33,11 @@ export const typeDefs = /* GraphQL */ `
     startedAt: String!
     completedAt: String
     eventCount: Int!
+    isPaused: Boolean!
+    pausedAt: String
+    currentWorkflow: String
+    currentJob: String
+    currentStep: Int
   }
 
   type RunEvent {
@@ -93,6 +99,8 @@ export const typeDefs = /* GraphQL */ `
     completeRun(input: CompleteRunInput!): Boolean!
     cancelRun(runId: ID!): Boolean!
     stopRun(runId: ID!): Boolean!
+    pauseRun(runId: ID!): Boolean!
+    resumeRun(runId: ID!): Boolean!
   }
 
   type Subscription {

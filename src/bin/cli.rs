@@ -363,11 +363,22 @@ impl TelemetryReporter {
     }
 }
 
+async fn wait_while_paused(paused: &AtomicBool, cancelled: &AtomicBool) {
+    while paused.load(Ordering::SeqCst) {
+        if cancelled.load(Ordering::SeqCst) {
+            break;
+        }
+        tracing::info!("Execution paused, waiting for resume...");
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+}
+
 fn start_command_listener(
     server_url: &str,
     run_id: &str,
     agent_token: &str,
     cancelled: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
 ) -> tokio::task::JoinHandle<()> {
     let ws_url = server_url
         .replace("http://", "ws://")
@@ -463,8 +474,13 @@ fn start_command_listener(
                                                             cancelled.store(true, Ordering::SeqCst);
                                                             return;
                                                         }
-                                                        Some("PAUSE") | Some("RESUME") => {
-                                                            tracing::debug!("Received {:?} command (not implemented)", cmd_type);
+                                                        Some("PAUSE") => {
+                                                            tracing::info!("Received authenticated PAUSE command from server");
+                                                            paused.store(true, Ordering::SeqCst);
+                                                        }
+                                                        Some("RESUME") => {
+                                                            tracing::info!("Received authenticated RESUME command from server");
+                                                            paused.store(false, Ordering::SeqCst);
                                                         }
                                                         Some(other) => {
                                                             tracing::warn!("Ignoring unknown command type: {}", other);
@@ -643,6 +659,7 @@ async fn run_directory(
 
     let run_id = uuid::Uuid::new_v4().to_string();
     let cancelled = Arc::new(AtomicBool::new(false));
+    let paused = Arc::new(AtomicBool::new(false));
 
     let telemetry = if let Some(server) = server_url {
         let (reporter, mut event_rx) = TelemetryReporter::new(server);
@@ -651,7 +668,7 @@ async fn run_directory(
             .register_run(&run_id, &dir.display().to_string())
             .await;
 
-        let command_handle = start_command_listener(server, &run_id, reporter.agent_token(), cancelled.clone());
+        let command_handle = start_command_listener(server, &run_id, reporter.agent_token(), cancelled.clone(), paused.clone());
 
         let flush_server_url = server.to_string();
         let flush_cancelled = cancelled.clone();

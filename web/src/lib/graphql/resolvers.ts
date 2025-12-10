@@ -28,7 +28,12 @@ export const resolvers = {
         workflowsDir: run.workflowsDir,
         startedAt: run.startedAt.toISOString(),
         completedAt: run.completedAt?.toISOString() ?? null,
-        eventCount: run.events.length
+        eventCount: run.events.length,
+        isPaused: run.isPaused,
+        pausedAt: run.pausedAt?.toISOString() ?? null,
+        currentWorkflow: run.currentWorkflow ?? null,
+        currentJob: run.currentJob ?? null,
+        currentStep: run.currentStep ?? null
       }
     },
 
@@ -40,7 +45,12 @@ export const resolvers = {
         workflowsDir: run.workflowsDir,
         startedAt: run.startedAt.toISOString(),
         completedAt: run.completedAt?.toISOString() ?? null,
-        eventCount: run.events.length
+        eventCount: run.events.length,
+        isPaused: run.isPaused,
+        pausedAt: run.pausedAt?.toISOString() ?? null,
+        currentWorkflow: run.currentWorkflow ?? null,
+        currentJob: run.currentJob ?? null,
+        currentStep: run.currentStep ?? null
       }))
     },
 
@@ -71,7 +81,12 @@ export const resolvers = {
         workflowsDir: run.workflowsDir,
         startedAt: run.startedAt.toISOString(),
         completedAt: run.completedAt?.toISOString() ?? null,
-        eventCount: run.events.length
+        eventCount: run.events.length,
+        isPaused: run.isPaused,
+        pausedAt: run.pausedAt?.toISOString() ?? null,
+        currentWorkflow: run.currentWorkflow ?? null,
+        currentJob: run.currentJob ?? null,
+        currentStep: run.currentStep ?? null
       }
     },
 
@@ -129,6 +144,54 @@ export const resolvers = {
 
       const command: RunCommandPayload = {
         commandType: 'STOP',
+        runId,
+        timestamp: new Date().toISOString(),
+        agentToken
+      }
+      pubsub.publish('commandsForRun', runId, command)
+
+      return true
+    },
+
+    pauseRun: async (_: unknown, { runId }: { runId: string }) => {
+      await appState.init()
+
+      const agentToken = await appState.getAgentToken(runId)
+      if (!agentToken) {
+        throw new Error('Run not found or no agent token registered')
+      }
+
+      const success = await appState.pauseRun(runId)
+      if (!success) {
+        throw new Error('Run is not running or already paused')
+      }
+
+      const command: RunCommandPayload = {
+        commandType: 'PAUSE',
+        runId,
+        timestamp: new Date().toISOString(),
+        agentToken
+      }
+      pubsub.publish('commandsForRun', runId, command)
+
+      return true
+    },
+
+    resumeRun: async (_: unknown, { runId }: { runId: string }) => {
+      await appState.init()
+
+      const agentToken = await appState.getAgentToken(runId)
+      if (!agentToken) {
+        throw new Error('Run not found or no agent token registered')
+      }
+
+      const success = await appState.resumeRun(runId)
+      if (!success) {
+        throw new Error('Run is not paused')
+      }
+
+      const command: RunCommandPayload = {
+        commandType: 'RESUME',
         runId,
         timestamp: new Date().toISOString(),
         agentToken
