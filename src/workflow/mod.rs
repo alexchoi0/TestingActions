@@ -21,11 +21,11 @@ pub use action::{ActionCategory, ParsedAction};
 pub use context::ExecutionContext;
 pub use expressions::{evaluate as evaluate_expression, evaluate_params_json};
 pub use job::{DependsOn, Job, JobDefaults, RetryConfig, Step, Workflow};
+pub use loader::{LoadError, WorkflowLoader};
 pub use platform::{
     BrowserType, GoConfig, GoHooksConfig, JavaConfig, JavaHooksConfig, NodejsConfig,
     NodejsHooksConfig, Platform, PlatformsConfig, PlaywrightConfig, PythonConfig,
     PythonHooksConfig, RustConfig, RustHooksConfig, Viewport, WebAuthConfig, WebConfig,
     WebRetryConfig,
 };
-pub use loader::{LoadError, WorkflowLoader};
 pub use runner_config::{DatabaseConfigYaml, Profile, ProfileHooks, RunnerConfig};

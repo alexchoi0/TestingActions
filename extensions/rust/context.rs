@@ -157,7 +157,12 @@ impl Context {
     }
 
     /// Set mock clock state (called by the bridge)
-    pub fn set_clock(&mut self, virtual_time_ms: Option<i64>, virtual_time_iso: Option<String>, frozen: bool) {
+    pub fn set_clock(
+        &mut self,
+        virtual_time_ms: Option<i64>,
+        virtual_time_iso: Option<String>,
+        frozen: bool,
+    ) {
         self.clock = Some(ClockState {
             virtual_time_ms,
             virtual_time_iso,
@@ -172,7 +177,10 @@ impl Context {
 
     /// Check if the clock is mocked
     pub fn is_clock_mocked(&self) -> bool {
-        self.clock.as_ref().map(|c| c.virtual_time_ms.is_some()).unwrap_or(false)
+        self.clock
+            .as_ref()
+            .map(|c| c.virtual_time_ms.is_some())
+            .unwrap_or(false)
     }
 
     /// Get current time (respects mock clock if set)
@@ -196,10 +204,7 @@ mod tests {
         ctx.set("key1", Value::String("value1".to_string()));
         ctx.set("key2", Value::Number(42.into()));
 
-        assert_eq!(
-            ctx.get("key1"),
-            Some(&Value::String("value1".to_string()))
-        );
+        assert_eq!(ctx.get("key1"), Some(&Value::String("value1".to_string())));
         assert_eq!(ctx.get("key2"), Some(&Value::Number(42.into())));
         assert_eq!(ctx.get("key3"), None);
     }
@@ -261,8 +266,14 @@ mod tests {
 
         ctx.set_step_outputs("step1", outputs);
 
-        assert_eq!(ctx.get_step_output("step1", "result"), Some(&"42".to_string()));
-        assert_eq!(ctx.get_step_output("step1", "status"), Some(&"ok".to_string()));
+        assert_eq!(
+            ctx.get_step_output("step1", "result"),
+            Some(&"42".to_string())
+        );
+        assert_eq!(
+            ctx.get_step_output("step1", "status"),
+            Some(&"ok".to_string())
+        );
         assert_eq!(ctx.get_step_output("step1", "missing"), None);
         assert_eq!(ctx.get_step_output("step2", "result"), None);
     }

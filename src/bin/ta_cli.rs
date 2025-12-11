@@ -5,8 +5,7 @@ use clap::{Parser, Subcommand};
 use futures::stream::StreamExt;
 use futures::SinkExt;
 use testing_actions::client::{
-    format_timestamp, status_icon, subscriptions, ws_url, GraphQLClient, Run,
-    RunEventResponse,
+    format_timestamp, status_icon, subscriptions, ws_url, GraphQLClient, Run, RunEventResponse,
 };
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -273,11 +272,9 @@ async fn cmd_watch(run_id: &str, timeout_secs: u64, json_output: bool) -> anyhow
                             if let Some(payload) = json.get("payload") {
                                 if let Some(data) = payload.get("data") {
                                     if let Some(event_val) = data.get("eventsForRun") {
-                                        if let Ok(event) =
-                                            serde_json::from_value::<RunEventResponse>(
-                                                event_val.clone(),
-                                            )
-                                        {
+                                        if let Ok(event) = serde_json::from_value::<RunEventResponse>(
+                                            event_val.clone(),
+                                        ) {
                                             if json_output {
                                                 println!("{}", serde_json::to_string(&event)?);
                                             } else {

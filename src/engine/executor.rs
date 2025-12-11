@@ -11,8 +11,8 @@ use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::bridge::{
-    GoBridge, JavaBridge, NodejsBridge, PlaywrightBridge,
-    PythonBridge, RustBridge, WebBridge,
+    Bridge, BridgeConfig, GoBridge, JavaBridge, NodejsBridge, PlaywrightBridge, PythonBridge,
+    RustBridge, WebBridge,
 };
 use crate::engine::actions;
 use crate::engine::error::ExecutorError;
@@ -35,21 +35,9 @@ pub enum ExecutionPhase {
 
 /// The platform-aware workflow executor
 pub struct Executor {
-    playwright_bridge: Option<PlaywrightBridge>,
-    nodejs_bridge: Option<NodejsBridge>,
-    rust_bridge: Option<RustBridge>,
-    python_bridge: Option<PythonBridge>,
-    java_bridge: Option<JavaBridge>,
-    go_bridge: Option<GoBridge>,
-    web_bridge: Option<WebBridge>,
+    bridges: HashMap<Platform, Box<dyn Bridge>>,
+    configs: HashMap<Platform, BridgeConfig>,
     context: ExecutionContext,
-    nodejs_config: Option<NodejsConfig>,
-    rust_config: Option<RustConfig>,
-    python_config: Option<PythonConfig>,
-    java_config: Option<JavaConfig>,
-    go_config: Option<GoConfig>,
-    web_config: Option<WebConfig>,
-    playwright_config: Option<PlaywrightConfig>,
     state_manager: Option<SharedStateManager>,
     mock_clock: MockClock,
 }
@@ -58,21 +46,9 @@ impl Executor {
     /// Create a new executor (lazy initialization of bridges)
     pub fn new() -> Self {
         Self {
-            playwright_bridge: None,
-            nodejs_bridge: None,
-            rust_bridge: None,
-            python_bridge: None,
-            java_bridge: None,
-            go_bridge: None,
-            web_bridge: None,
+            bridges: HashMap::new(),
+            configs: HashMap::new(),
             context: ExecutionContext::new(),
-            nodejs_config: None,
-            rust_config: None,
-            python_config: None,
-            java_config: None,
-            go_config: None,
-            web_config: None,
-            playwright_config: None,
             state_manager: None,
             mock_clock: MockClock::new(),
         }
@@ -81,21 +57,9 @@ impl Executor {
     /// Create executor with custom context (for testing/seeding)
     pub fn with_context(context: ExecutionContext) -> Self {
         Self {
-            playwright_bridge: None,
-            nodejs_bridge: None,
-            rust_bridge: None,
-            python_bridge: None,
-            java_bridge: None,
-            go_bridge: None,
-            web_bridge: None,
+            bridges: HashMap::new(),
+            configs: HashMap::new(),
             context,
-            nodejs_config: None,
-            rust_config: None,
-            python_config: None,
-            java_config: None,
-            go_config: None,
-            web_config: None,
-            playwright_config: None,
             state_manager: None,
             mock_clock: MockClock::new(),
         }
@@ -109,25 +73,34 @@ impl Executor {
     /// Set platform configurations from external source (e.g., runner config)
     pub fn with_platforms(mut self, platforms: &PlatformsConfig) -> Self {
         if let Some(config) = &platforms.playwright {
-            self.playwright_config = Some(config.clone());
+            self.configs.insert(
+                Platform::Playwright,
+                BridgeConfig::Playwright(config.clone()),
+            );
         }
         if let Some(config) = &platforms.nodejs {
-            self.nodejs_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Nodejs, BridgeConfig::Nodejs(config.clone()));
         }
         if let Some(config) = &platforms.rust {
-            self.rust_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Rust, BridgeConfig::Rust(config.clone()));
         }
         if let Some(config) = &platforms.python {
-            self.python_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Python, BridgeConfig::Python(config.clone()));
         }
         if let Some(config) = &platforms.java {
-            self.java_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Java, BridgeConfig::Java(config.clone()));
         }
         if let Some(config) = &platforms.go {
-            self.go_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Go, BridgeConfig::Go(config.clone()));
         }
         if let Some(config) = &platforms.web {
-            self.web_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Web, BridgeConfig::Web(config.clone()));
         }
         self
     }
@@ -144,120 +117,138 @@ impl Executor {
             .insert(key.to_string(), value.to_string());
     }
 
-    /// Ensure Playwright bridge is initialized
-    async fn ensure_playwright(&mut self) -> Result<(), ExecutorError> {
-        if self.playwright_bridge.is_none() {
-            info!("Initializing Playwright bridge");
-            self.playwright_bridge = Some(PlaywrightBridge::start().await?);
+    /// Ensure a bridge is initialized for the given platform
+    async fn ensure_bridge(&mut self, platform: Platform) -> Result<(), ExecutorError> {
+        if self.bridges.contains_key(&platform) {
+            return Ok(());
         }
+
+        let config = self.configs.get(&platform).ok_or_else(|| {
+            ExecutorError::ConfigError(format!(
+                "{:?} platform requires configuration in workflow",
+                platform
+            ))
+        })?;
+
+        let bridge: Box<dyn Bridge> = match (platform.clone(), config.clone()) {
+            (Platform::Playwright, BridgeConfig::Playwright(_)) => {
+                info!("Initializing Playwright bridge");
+                Box::new(PlaywrightBridge::start().await?)
+            }
+            (Platform::Nodejs, BridgeConfig::Nodejs(c)) => {
+                info!("Initializing Node.js bridge (registry: {})", c.registry);
+                Box::new(NodejsBridge::from_config(&c).await?)
+            }
+            (Platform::Rust, BridgeConfig::Rust(c)) => {
+                let binary_info = c
+                    .binary
+                    .as_ref()
+                    .or(c.cargo_bin.as_ref())
+                    .map(|s| s.as_str())
+                    .unwrap_or("unknown");
+                info!("Initializing Rust bridge (binary: {})", binary_info);
+                Box::new(RustBridge::from_config(&c).await?)
+            }
+            (Platform::Python, BridgeConfig::Python(c)) => {
+                info!(
+                    "Initializing Python bridge (script: {}, interpreter: {})",
+                    c.script, c.interpreter
+                );
+                Box::new(PythonBridge::from_config(&c).await?)
+            }
+            (Platform::Java, BridgeConfig::Java(c)) => {
+                info!("Initializing Java bridge (main_class: {})", c.main_class);
+                Box::new(JavaBridge::from_config(&c).await?)
+            }
+            (Platform::Go, BridgeConfig::Go(c)) => {
+                let binary_info = c
+                    .binary
+                    .as_ref()
+                    .or(c.go_run.as_ref())
+                    .or(c.go_build.as_ref())
+                    .map(|s| s.as_str())
+                    .unwrap_or("unknown");
+                info!("Initializing Go bridge (binary: {})", binary_info);
+                Box::new(GoBridge::from_config(&c).await?)
+            }
+            (Platform::Web, BridgeConfig::Web(c)) => {
+                info!("Initializing Web bridge (base_url: {})", c.base_url);
+                Box::new(WebBridge::from_config(&c)?)
+            }
+            _ => {
+                return Err(ExecutorError::ConfigError(format!(
+                    "Platform {:?} configuration mismatch",
+                    platform
+                )));
+            }
+        };
+
+        self.bridges.insert(platform, bridge);
         Ok(())
     }
 
-    /// Ensure Node.js bridge is initialized
-    async fn ensure_nodejs(&mut self) -> Result<(), ExecutorError> {
-        if self.nodejs_bridge.is_none() {
-            let config = self.nodejs_config.as_ref().ok_or_else(|| {
-                ExecutorError::ConfigError(
-                    "Node.js platform requires 'nodejs' configuration in workflow".to_string(),
-                )
-            })?;
-            info!("Initializing Node.js bridge (registry: {})", config.registry);
-            self.nodejs_bridge = Some(NodejsBridge::from_config(config).await?);
-        }
-        Ok(())
+    /// Get a reference to the Playwright bridge
+    fn get_playwright_bridge(&self) -> Result<&PlaywrightBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Playwright)
+            .and_then(|b| b.as_playwright())
+            .ok_or_else(|| ExecutorError::ConfigError("Playwright bridge not initialized".into()))
     }
 
-    /// Ensure Rust bridge is initialized
-    async fn ensure_rust(&mut self) -> Result<(), ExecutorError> {
-        if self.rust_bridge.is_none() {
-            let config = self.rust_config.as_ref().ok_or_else(|| {
-                ExecutorError::ConfigError(
-                    "Rust platform requires 'rust' configuration in workflow".to_string(),
-                )
-            })?;
-            let binary_info = config
-                .binary
-                .as_ref()
-                .or(config.cargo_bin.as_ref())
-                .map(|s| s.as_str())
-                .unwrap_or("unknown");
-            info!("Initializing Rust bridge (binary: {})", binary_info);
-            self.rust_bridge = Some(RustBridge::from_config(config).await?);
-        }
-        Ok(())
+    /// Get a reference to the Web bridge
+    fn get_web_bridge(&self) -> Result<&WebBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Web)
+            .and_then(|b| b.as_web())
+            .ok_or_else(|| ExecutorError::ConfigError("Web bridge not initialized".into()))
     }
 
-    /// Ensure Python bridge is initialized
-    async fn ensure_python(&mut self) -> Result<(), ExecutorError> {
-        if self.python_bridge.is_none() {
-            let config = self.python_config.as_ref().ok_or_else(|| {
-                ExecutorError::ConfigError(
-                    "Python platform requires 'python' configuration in workflow".to_string(),
-                )
-            })?;
-            info!(
-                "Initializing Python bridge (script: {}, interpreter: {})",
-                config.script, config.interpreter
-            );
-            self.python_bridge = Some(PythonBridge::from_config(config).await?);
-        }
-        Ok(())
+    /// Get a reference to the Node.js bridge
+    fn get_nodejs_bridge(&self) -> Result<&NodejsBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Nodejs)
+            .and_then(|b| b.as_nodejs())
+            .ok_or_else(|| ExecutorError::ConfigError("Node.js bridge not initialized".into()))
     }
 
-    /// Ensure Java bridge is initialized
-    async fn ensure_java(&mut self) -> Result<(), ExecutorError> {
-        if self.java_bridge.is_none() {
-            let config = self.java_config.as_ref().ok_or_else(|| {
-                ExecutorError::ConfigError(
-                    "Java platform requires 'java' configuration in workflow".to_string(),
-                )
-            })?;
-            info!(
-                "Initializing Java bridge (main_class: {})",
-                config.main_class
-            );
-            self.java_bridge = Some(JavaBridge::from_config(config).await?);
-        }
-        Ok(())
+    /// Get a reference to the Rust bridge
+    fn get_rust_bridge(&self) -> Result<&RustBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Rust)
+            .and_then(|b| b.as_rust())
+            .ok_or_else(|| ExecutorError::ConfigError("Rust bridge not initialized".into()))
     }
 
-    /// Ensure Go bridge is initialized
-    async fn ensure_go(&mut self) -> Result<(), ExecutorError> {
-        if self.go_bridge.is_none() {
-            let config = self.go_config.as_ref().ok_or_else(|| {
-                ExecutorError::ConfigError(
-                    "Go platform requires 'go' configuration in workflow".to_string(),
-                )
-            })?;
-            let binary_info = config
-                .binary
-                .as_ref()
-                .or(config.go_run.as_ref())
-                .or(config.go_build.as_ref())
-                .map(|s| s.as_str())
-                .unwrap_or("unknown");
-            info!("Initializing Go bridge (binary: {})", binary_info);
-            self.go_bridge = Some(GoBridge::from_config(config).await?);
-        }
-        Ok(())
+    /// Get a reference to the Python bridge
+    fn get_python_bridge(&self) -> Result<&PythonBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Python)
+            .and_then(|b| b.as_python())
+            .ok_or_else(|| ExecutorError::ConfigError("Python bridge not initialized".into()))
     }
 
-    /// Ensure Web bridge is initialized
-    fn ensure_web(&mut self) -> Result<(), ExecutorError> {
-        if self.web_bridge.is_none() {
-            let config = self.web_config.as_ref().ok_or_else(|| {
-                ExecutorError::ConfigError(
-                    "Web platform requires 'web' configuration in workflow".to_string(),
-                )
-            })?;
-            info!("Initializing Web bridge (base_url: {})", config.base_url);
-            self.web_bridge = Some(WebBridge::from_config(config)?);
-        }
-        Ok(())
+    /// Get a reference to the Java bridge
+    fn get_java_bridge(&self) -> Result<&JavaBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Java)
+            .and_then(|b| b.as_java())
+            .ok_or_else(|| ExecutorError::ConfigError("Java bridge not initialized".into()))
+    }
+
+    /// Get a reference to the Go bridge
+    fn get_go_bridge(&self) -> Result<&GoBridge, ExecutorError> {
+        self.bridges
+            .get(&Platform::Go)
+            .and_then(|b| b.as_go())
+            .ok_or_else(|| ExecutorError::ConfigError("Go bridge not initialized".into()))
     }
 
     /// Get the effective platform for a job (without considering step)
-    fn get_job_platform(&self, job: &Job, workflow_platform: &Option<Platform>) -> Option<Platform> {
+    fn get_job_platform(
+        &self,
+        job: &Job,
+        workflow_platform: &Option<Platform>,
+    ) -> Option<Platform> {
         job.platform.clone().or_else(|| workflow_platform.clone())
     }
 
@@ -298,25 +289,34 @@ impl Executor {
 
         // Store platform configs from consolidated platforms field
         if let Some(config) = &workflow.platforms.playwright {
-            self.playwright_config = Some(config.clone());
+            self.configs.insert(
+                Platform::Playwright,
+                BridgeConfig::Playwright(config.clone()),
+            );
         }
         if let Some(config) = &workflow.platforms.nodejs {
-            self.nodejs_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Nodejs, BridgeConfig::Nodejs(config.clone()));
         }
         if let Some(config) = &workflow.platforms.rust {
-            self.rust_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Rust, BridgeConfig::Rust(config.clone()));
         }
         if let Some(config) = &workflow.platforms.python {
-            self.python_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Python, BridgeConfig::Python(config.clone()));
         }
         if let Some(config) = &workflow.platforms.java {
-            self.java_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Java, BridgeConfig::Java(config.clone()));
         }
         if let Some(config) = &workflow.platforms.go {
-            self.go_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Go, BridgeConfig::Go(config.clone()));
         }
         if let Some(config) = &workflow.platforms.web {
-            self.web_config = Some(config.clone());
+            self.configs
+                .insert(Platform::Web, BridgeConfig::Web(config.clone()));
         }
 
         // Initialize state manager for this workflow
@@ -447,7 +447,10 @@ impl Executor {
         workflow_platform: &Option<Platform>,
         job_platform: &Option<Platform>,
     ) -> Result<JobResult, ExecutorError> {
-        info!("Executing job: {} (default platform: {:?})", job_name, job_platform);
+        info!(
+            "Executing job: {} (default platform: {:?})",
+            job_name, job_platform
+        );
 
         // Merge job env
         for (key, value) in &job.env {
@@ -501,8 +504,7 @@ impl Executor {
             }
 
             // Parse action first to check if it needs a platform
-            let action = ParsedAction::parse(&step.uses)
-                .map_err(|e| ExecutorError::UnknownAction(e))?;
+            let action = ParsedAction::parse(&step.uses).map_err(ExecutorError::UnknownAction)?;
 
             // For platform-agnostic actions (wait, etc.), execute directly without bridge
             let result = if action.category.is_platform_agnostic()
@@ -516,34 +518,17 @@ impl Executor {
                 let step_platform = self.resolve_step_platform(step, job, workflow_platform);
 
                 // Ensure the appropriate bridge is ready
-                match &step_platform {
-                    Platform::Playwright => {
-                        self.ensure_playwright().await?;
-                        if browser_id.is_none() {
-                            let bridge = self.playwright_bridge.as_ref().unwrap();
-                            browser_id =
-                                Some(bridge.browser_launch(job.browser.clone(), job.headless).await?);
-                            page_id = Some(bridge.page_new(browser_id.as_ref().unwrap()).await?);
-                        }
-                    }
-                    Platform::Nodejs => {
-                        self.ensure_nodejs().await?;
-                    }
-                    Platform::Rust => {
-                        self.ensure_rust().await?;
-                    }
-                    Platform::Python => {
-                        self.ensure_python().await?;
-                    }
-                    Platform::Java => {
-                        self.ensure_java().await?;
-                    }
-                    Platform::Go => {
-                        self.ensure_go().await?;
-                    }
-                    Platform::Web => {
-                        self.ensure_web()?;
-                    }
+                self.ensure_bridge(step_platform.clone()).await?;
+
+                // Special handling for Playwright: manage browser/page lifecycle
+                if step_platform == Platform::Playwright && browser_id.is_none() {
+                    let bridge = self.get_playwright_bridge()?;
+                    browser_id = Some(
+                        bridge
+                            .browser_launch(job.browser.clone(), job.headless)
+                            .await?,
+                    );
+                    page_id = Some(bridge.page_new(browser_id.as_ref().unwrap()).await?);
                 }
 
                 self.execute_step(step, &step_platform, page_id.as_deref())
@@ -608,8 +593,10 @@ impl Executor {
         }
 
         // Cleanup
-        if let (Some(bridge), Some(browser_id)) = (&self.playwright_bridge, browser_id) {
-            let _ = bridge.browser_close(&browser_id).await;
+        if let Some(browser_id) = browser_id {
+            if let Ok(bridge) = self.get_playwright_bridge() {
+                let _ = bridge.browser_close(&browser_id).await;
+            }
         }
 
         Ok(JobResult {
@@ -631,8 +618,7 @@ impl Executor {
         info!("Executing step: {}", step_name);
 
         // Parse action
-        let action =
-            ParsedAction::parse(&step.uses).map_err(|e| ExecutorError::UnknownAction(e))?;
+        let action = ParsedAction::parse(&step.uses).map_err(ExecutorError::UnknownAction)?;
 
         // Check platform compatibility
         if !action.is_compatible_with(platform) {
@@ -653,10 +639,22 @@ impl Executor {
                 self.execute_playwright_action(&action, page_id, &params)
                     .await
             }
-            Platform::Nodejs => self.execute_nodejs_action(&action, &params, &json_params).await,
-            Platform::Rust => self.execute_rust_action(&action, &params, &json_params).await,
-            Platform::Python => self.execute_python_action(&action, &params, &json_params).await,
-            Platform::Java => self.execute_java_action(&action, &params, &json_params).await,
+            Platform::Nodejs => {
+                self.execute_nodejs_action(&action, &params, &json_params)
+                    .await
+            }
+            Platform::Rust => {
+                self.execute_rust_action(&action, &params, &json_params)
+                    .await
+            }
+            Platform::Python => {
+                self.execute_python_action(&action, &params, &json_params)
+                    .await
+            }
+            Platform::Java => {
+                self.execute_java_action(&action, &params, &json_params)
+                    .await
+            }
             Platform::Go => self.execute_go_action(&action, &params, &json_params).await,
             Platform::Web => self.execute_web_action(&action, &params).await,
         }
@@ -678,8 +676,7 @@ impl Executor {
         info!("Executing hook step: {}", step_name);
 
         // Parse action
-        let action =
-            ParsedAction::parse(&step.uses).map_err(|e| ExecutorError::UnknownAction(e))?;
+        let action = ParsedAction::parse(&step.uses).map_err(ExecutorError::UnknownAction)?;
 
         // For platform-agnostic actions, execute directly
         if action.category.is_platform_agnostic() && step.platform.is_none() {
@@ -699,29 +696,7 @@ impl Executor {
             });
 
         // Ensure bridge is ready
-        match &platform {
-            Platform::Playwright => {
-                self.ensure_playwright().await?;
-            }
-            Platform::Nodejs => {
-                self.ensure_nodejs().await?;
-            }
-            Platform::Rust => {
-                self.ensure_rust().await?;
-            }
-            Platform::Python => {
-                self.ensure_python().await?;
-            }
-            Platform::Java => {
-                self.ensure_java().await?;
-            }
-            Platform::Go => {
-                self.ensure_go().await?;
-            }
-            Platform::Web => {
-                self.ensure_web()?;
-            }
-        }
+        self.ensure_bridge(platform.clone()).await?;
 
         // Execute step (no clock auto-advance for hooks)
         self.execute_step(step, &platform, None).await
@@ -737,7 +712,7 @@ impl Executor {
         let page_id = page_id.ok_or_else(|| {
             ExecutorError::ConfigError("Playwright action requires page_id".to_string())
         })?;
-        let bridge = self.playwright_bridge.as_ref().unwrap();
+        let bridge = self.get_playwright_bridge()?;
 
         let outputs = match action.category {
             ActionCategory::Page => {
@@ -749,8 +724,7 @@ impl Executor {
                     .await?
             }
             ActionCategory::Assert => {
-                actions::playwright::execute_assert(bridge, &action.action, page_id, params)
-                    .await?
+                actions::playwright::execute_assert(bridge, &action.action, page_id, params).await?
             }
             ActionCategory::Wait => {
                 actions::playwright::execute_wait_action(bridge, &action.action, page_id, params)
@@ -761,8 +735,7 @@ impl Executor {
                     .await?
             }
             ActionCategory::Network => {
-                actions::playwright::execute_network_action(&action.action, page_id, params)
-                    .await?
+                actions::playwright::execute_network_action(&action.action, page_id, params).await?
             }
             _ => {
                 return Err(ExecutorError::PlatformMismatch(format!(
@@ -787,11 +760,12 @@ impl Executor {
         params: &HashMap<String, String>,
         json_params: &HashMap<String, serde_json::Value>,
     ) -> Result<StepResult, ExecutorError> {
-        let bridge = self.nodejs_bridge.as_ref().unwrap();
+        let bridge = self.get_nodejs_bridge()?;
 
         match action.category {
             ActionCategory::Node => {
-                actions::nodejs::execute_node_action(bridge, &action.action, params, json_params).await
+                actions::nodejs::execute_node_action(bridge, &action.action, params, json_params)
+                    .await
             }
             ActionCategory::Ctx => {
                 actions::nodejs::execute_ctx_action(bridge, &action.action, params).await
@@ -805,9 +779,7 @@ impl Executor {
             ActionCategory::Assert => {
                 actions::nodejs::execute_assert_action(bridge, &action.action, json_params).await
             }
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, params).await
-            }
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, params).await,
             _ => Err(ExecutorError::PlatformMismatch(format!(
                 "Action category {:?} not supported on Node.js",
                 action.category
@@ -822,7 +794,7 @@ impl Executor {
         params: &HashMap<String, String>,
         json_params: &HashMap<String, serde_json::Value>,
     ) -> Result<StepResult, ExecutorError> {
-        let bridge = self.rust_bridge.as_ref().unwrap();
+        let bridge = self.get_rust_bridge()?;
 
         match action.category {
             ActionCategory::Rs => {
@@ -831,9 +803,7 @@ impl Executor {
             ActionCategory::Assert => {
                 actions::rust::execute_assert_action(bridge, &action.action, json_params).await
             }
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, params).await
-            }
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, params).await,
             _ => Err(ExecutorError::PlatformMismatch(format!(
                 "Action category {:?} not supported on Rust",
                 action.category
@@ -848,18 +818,17 @@ impl Executor {
         params: &HashMap<String, String>,
         json_params: &HashMap<String, serde_json::Value>,
     ) -> Result<StepResult, ExecutorError> {
-        let bridge = self.python_bridge.as_ref().unwrap();
+        let bridge = self.get_python_bridge()?;
 
         match action.category {
             ActionCategory::Py => {
-                actions::python::execute_py_action(bridge, &action.action, params, json_params).await
+                actions::python::execute_py_action(bridge, &action.action, params, json_params)
+                    .await
             }
             ActionCategory::Assert => {
                 actions::python::execute_assert_action(bridge, &action.action, json_params).await
             }
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, params).await
-            }
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, params).await,
             _ => Err(ExecutorError::PlatformMismatch(format!(
                 "Action category {:?} not supported on Python",
                 action.category
@@ -874,7 +843,7 @@ impl Executor {
         params: &HashMap<String, String>,
         json_params: &HashMap<String, serde_json::Value>,
     ) -> Result<StepResult, ExecutorError> {
-        let bridge = self.java_bridge.as_ref().unwrap();
+        let bridge = self.get_java_bridge()?;
 
         match action.category {
             ActionCategory::Java => {
@@ -883,9 +852,7 @@ impl Executor {
             ActionCategory::Assert => {
                 actions::java::execute_assert_action(bridge, &action.action, json_params).await
             }
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, params).await
-            }
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, params).await,
             _ => Err(ExecutorError::PlatformMismatch(format!(
                 "Action category {:?} not supported on Java",
                 action.category
@@ -900,7 +867,7 @@ impl Executor {
         params: &HashMap<String, String>,
         json_params: &HashMap<String, serde_json::Value>,
     ) -> Result<StepResult, ExecutorError> {
-        let bridge = self.go_bridge.as_ref().unwrap();
+        let bridge = self.get_go_bridge()?;
 
         match action.category {
             ActionCategory::Go => {
@@ -909,9 +876,7 @@ impl Executor {
             ActionCategory::Assert => {
                 actions::go::execute_assert_action(bridge, &action.action, json_params).await
             }
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, params).await
-            }
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, params).await,
             _ => Err(ExecutorError::PlatformMismatch(format!(
                 "Action category {:?} not supported on Go",
                 action.category
@@ -925,18 +890,14 @@ impl Executor {
         action: &ParsedAction,
         params: &HashMap<String, String>,
     ) -> Result<StepResult, ExecutorError> {
-        let bridge = self.web_bridge.as_ref().unwrap();
+        let bridge = self.get_web_bridge()?;
 
         match action.category {
             ActionCategory::Web => {
                 actions::web::execute_web_request(bridge, &action.action, params).await
             }
-            ActionCategory::Assert => {
-                actions::web::execute_assert(&action.action, params).await
-            }
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, params).await
-            }
+            ActionCategory::Assert => actions::web::execute_assert(&action.action, params).await,
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, params).await,
             _ => Err(ExecutorError::PlatformMismatch(format!(
                 "Action category {:?} not supported on Web",
                 action.category
@@ -953,14 +914,10 @@ impl Executor {
         let params = evaluate_params(&step.with, &self.context)?;
 
         match action.category {
-            ActionCategory::Wait => {
-                actions::nodejs::execute_wait(&action.action, &params).await
-            }
-            ActionCategory::Assert => {
-                Err(ExecutorError::ConfigError(
-                    "Assert actions require a platform context".to_string(),
-                ))
-            }
+            ActionCategory::Wait => actions::nodejs::execute_wait(&action.action, &params).await,
+            ActionCategory::Assert => Err(ExecutorError::ConfigError(
+                "Assert actions require a platform context".to_string(),
+            )),
             ActionCategory::Fail => {
                 let message = params
                     .get("message")
@@ -968,9 +925,7 @@ impl Executor {
                     .unwrap_or("Intentional failure");
                 Err(ExecutorError::StepFailed(message.to_string()))
             }
-            ActionCategory::Clock => {
-                self.execute_clock_action(&action.action, &params).await
-            }
+            ActionCategory::Clock => self.execute_clock_action(&action.action, &params).await,
             ActionCategory::Bash => {
                 actions::bash::execute_bash_action(&action.action, &params).await
             }
@@ -1082,38 +1037,11 @@ impl Executor {
     async fn sync_clock_to_bridges(&self) -> Result<(), ExecutorError> {
         let clock_state = self.mock_clock.get_sync_state().await;
 
-        // Sync to Node.js bridge
-        if let Some(bridge) = &self.nodejs_bridge {
-            if let Err(e) = bridge.sync_clock(&clock_state).await {
-                warn!("Failed to sync clock to Node.js bridge: {}", e);
-            }
-        }
-
-        // Sync to Rust bridge
-        if let Some(bridge) = &self.rust_bridge {
-            if let Err(e) = bridge.sync_clock(&clock_state).await {
-                warn!("Failed to sync clock to Rust bridge: {}", e);
-            }
-        }
-
-        // Sync to Python bridge
-        if let Some(bridge) = &self.python_bridge {
-            if let Err(e) = bridge.sync_clock(&clock_state).await {
-                warn!("Failed to sync clock to Python bridge: {}", e);
-            }
-        }
-
-        // Sync to Java bridge
-        if let Some(bridge) = &self.java_bridge {
-            if let Err(e) = bridge.sync_clock(&clock_state).await {
-                warn!("Failed to sync clock to Java bridge: {}", e);
-            }
-        }
-
-        // Sync to Go bridge
-        if let Some(bridge) = &self.go_bridge {
-            if let Err(e) = bridge.sync_clock(&clock_state).await {
-                warn!("Failed to sync clock to Go bridge: {}", e);
+        for (platform, bridge) in &self.bridges {
+            if bridge.supports_clock() {
+                if let Err(e) = bridge.sync_clock(&clock_state).await {
+                    warn!("Failed to sync clock to {:?} bridge: {}", platform, e);
+                }
             }
         }
 

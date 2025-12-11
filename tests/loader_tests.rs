@@ -70,7 +70,11 @@ fn test_load_mixed_extensions() {
 #[test]
 fn test_skip_non_yaml_files() {
     let dir = create_test_dir();
-    write_workflow(dir.path(), "workflow.yaml", &simple_workflow("real-workflow"));
+    write_workflow(
+        dir.path(),
+        "workflow.yaml",
+        &simple_workflow("real-workflow"),
+    );
     fs::write(dir.path().join("readme.md"), "# README").unwrap();
     fs::write(dir.path().join("config.json"), "{}").unwrap();
     fs::write(dir.path().join("script.sh"), "#!/bin/bash").unwrap();

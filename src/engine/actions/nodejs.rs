@@ -1,9 +1,9 @@
 //! Node.js action implementations
 
-use std::collections::HashMap;
-use crate::bridge::{NodejsBridge, NodejsBridgeOperations};
+use crate::bridge::{Bridge, NodejsBridge};
 use crate::engine::error::ExecutorError;
 use crate::engine::result::StepResult;
+use std::collections::HashMap;
 
 /// Execute a wait action (common across platforms)
 pub async fn execute_wait(
@@ -18,7 +18,9 @@ pub async fn execute_wait(
                 .or_else(|| params.get("duration"))
                 .ok_or_else(|| ExecutorError::MissingParameter("ms or duration".to_string()))?
                 .parse()
-                .map_err(|_| ExecutorError::InvalidParameter("ms/duration must be a number".to_string()))?;
+                .map_err(|_| {
+                    ExecutorError::InvalidParameter("ms/duration must be a number".to_string())
+                })?;
 
             tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
         }
@@ -59,7 +61,11 @@ pub async fn execute_node_action(
             let functions: Vec<String> = json_params
                 .get("functions")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let mut current_value = json_params
@@ -118,10 +124,7 @@ pub async fn execute_ctx_action(
             bridge.ctx_set(key, value).await?;
         }
         "clear" => {
-            let pattern = params
-                .get("pattern")
-                .map(|s| s.as_str())
-                .unwrap_or("*");
+            let pattern = params.get("pattern").map(|s| s.as_str()).unwrap_or("*");
 
             let cleared = bridge.ctx_clear(pattern).await?;
             outputs.insert("cleared".to_string(), cleared.to_string());
@@ -227,12 +230,12 @@ pub async fn execute_assert_action(
                 )));
             }
 
-            return Ok(StepResult {
+            Ok(StepResult {
                 success: true,
                 outputs: HashMap::new(),
                 error: None,
                 response: None,
-            });
+            })
         }
         "throws" => {
             let function = json_params
@@ -254,12 +257,12 @@ pub async fn execute_assert_action(
                 )));
             }
 
-            return Ok(StepResult {
+            Ok(StepResult {
                 success: true,
                 outputs: HashMap::new(),
                 error: None,
                 response: None,
-            });
+            })
         }
         "ctx_equals" => {
             let key = json_params
@@ -281,12 +284,12 @@ pub async fn execute_assert_action(
                 )));
             }
 
-            return Ok(StepResult {
+            Ok(StepResult {
                 success: true,
                 outputs: HashMap::new(),
                 error: None,
                 response: None,
-            });
+            })
         }
         _ => {
             let assertion_params = json_params
@@ -298,9 +301,9 @@ pub async fn execute_assert_action(
             let result = bridge.assert_custom(action, assertion_params).await?;
 
             if !result.success {
-                let message = result.message.unwrap_or_else(|| {
-                    format!("Custom assertion '{}' failed", action)
-                });
+                let message = result
+                    .message
+                    .unwrap_or_else(|| format!("Custom assertion '{}' failed", action));
                 return Err(ExecutorError::AssertionFailed(message));
             }
 
@@ -312,12 +315,12 @@ pub async fn execute_assert_action(
                 outputs.insert("expected".to_string(), expected.to_string());
             }
 
-            return Ok(StepResult {
+            Ok(StepResult {
                 success: true,
                 outputs,
                 error: None,
                 response: None,
-            });
+            })
         }
     }
 }

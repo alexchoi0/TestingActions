@@ -20,9 +20,21 @@ fn test_dag_single_workflow() {
 fn test_dag_linear_chain() {
     let dir = create_test_dir();
     write_workflow(dir.path(), "01.yaml", &simple_workflow("first"));
-    write_workflow(dir.path(), "02.yaml", &workflow_with_deps("second", &["first"]));
-    write_workflow(dir.path(), "03.yaml", &workflow_with_deps("third", &["second"]));
-    write_workflow(dir.path(), "04.yaml", &workflow_with_deps("fourth", &["third"]));
+    write_workflow(
+        dir.path(),
+        "02.yaml",
+        &workflow_with_deps("second", &["first"]),
+    );
+    write_workflow(
+        dir.path(),
+        "03.yaml",
+        &workflow_with_deps("third", &["second"]),
+    );
+    write_workflow(
+        dir.path(),
+        "04.yaml",
+        &workflow_with_deps("fourth", &["third"]),
+    );
 
     let workflows = WorkflowLoader::load_directory(dir.path()).unwrap();
     let dag = WorkflowDAG::build(workflows).unwrap();
@@ -40,7 +52,11 @@ fn test_dag_diamond_pattern() {
     let dir = create_test_dir();
     write_workflow(dir.path(), "01.yaml", &simple_workflow("top"));
     write_workflow(dir.path(), "02.yaml", &workflow_with_deps("left", &["top"]));
-    write_workflow(dir.path(), "03.yaml", &workflow_with_deps("right", &["top"]));
+    write_workflow(
+        dir.path(),
+        "03.yaml",
+        &workflow_with_deps("right", &["top"]),
+    );
     write_workflow(
         dir.path(),
         "04.yaml",
@@ -101,7 +117,11 @@ fn test_dag_fan_in() {
     let dir = create_test_dir();
     for i in 1..=5 {
         let name = format!("source-{}", i);
-        write_workflow(dir.path(), &format!("{}.yaml", name), &simple_workflow(&name));
+        write_workflow(
+            dir.path(),
+            &format!("{}.yaml", name),
+            &simple_workflow(&name),
+        );
     }
     write_workflow(
         dir.path(),

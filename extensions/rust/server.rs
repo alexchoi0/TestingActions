@@ -219,21 +219,14 @@ impl<R: RustRegistry> RpcServer<R> {
     }
 
     fn handle_set_execution_info(&mut self, id: u64, params: Value) -> RpcResponse {
-        let run_id = params
-            .get("runId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let job_name = params
-            .get("jobName")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let run_id = params.get("runId").and_then(|v| v.as_str()).unwrap_or("");
+        let job_name = params.get("jobName").and_then(|v| v.as_str()).unwrap_or("");
         let step_name = params
             .get("stepName")
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        self.context
-            .set_execution_info(run_id, job_name, step_name);
+        self.context.set_execution_info(run_id, job_name, step_name);
         RpcResponse::success(id, serde_json::json!({ "ok": true }))
     }
 
@@ -335,9 +328,13 @@ impl<R: RustRegistry> RpcServer<R> {
             .get("virtual_time_iso")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let frozen = params.get("frozen").and_then(|v| v.as_bool()).unwrap_or(false);
+        let frozen = params
+            .get("frozen")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
-        self.context.set_clock(virtual_time_ms, virtual_time_iso, frozen);
+        self.context
+            .set_clock(virtual_time_ms, virtual_time_iso, frozen);
         RpcResponse::success(id, serde_json::json!({ "ok": true }))
     }
 }
@@ -371,15 +368,13 @@ mod tests {
             ]
         }
 
-        fn call_assertion(
-            &self,
-            name: &str,
-            params: Value,
-            _ctx: &Context,
-        ) -> AssertionResult {
+        fn call_assertion(&self, name: &str, params: Value, _ctx: &Context) -> AssertionResult {
             match name {
                 "is_true" => {
-                    let value = params.get("value").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let value = params
+                        .get("value")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if value {
                         AssertionResult::pass()
                     } else {

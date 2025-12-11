@@ -89,9 +89,10 @@ async fn execute_exec(params: &HashMap<String, String>) -> Result<StepResult, Ex
     cmd.stderr(Stdio::piped());
 
     // Execute
-    let output = cmd.output().await.map_err(|e| {
-        ExecutorError::StepFailed(format!("Failed to execute command: {}", e))
-    })?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| ExecutorError::StepFailed(format!("Failed to execute command: {}", e)))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -99,7 +100,10 @@ async fn execute_exec(params: &HashMap<String, String>) -> Result<StepResult, Ex
     let mut outputs = HashMap::new();
     outputs.insert("stdout".to_string(), stdout.trim().to_string());
     outputs.insert("stderr".to_string(), stderr.trim().to_string());
-    outputs.insert("exit_code".to_string(), output.status.code().unwrap_or(-1).to_string());
+    outputs.insert(
+        "exit_code".to_string(),
+        output.status.code().unwrap_or(-1).to_string(),
+    );
 
     if output.status.success() {
         info!("Command completed successfully");
@@ -111,7 +115,10 @@ async fn execute_exec(params: &HashMap<String, String>) -> Result<StepResult, Ex
         })
     } else {
         let error_msg = if stderr.is_empty() {
-            format!("Command exited with code {}", output.status.code().unwrap_or(-1))
+            format!(
+                "Command exited with code {}",
+                output.status.code().unwrap_or(-1)
+            )
         } else {
             stderr.trim().to_string()
         };

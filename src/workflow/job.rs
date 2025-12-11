@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::platform::{
-    BrowserType, GoConfig, JavaConfig, NodejsConfig, Platform, PlatformsConfig,
-    PlaywrightConfig, PythonConfig, RustConfig, Viewport, WebConfig,
+    BrowserType, GoConfig, JavaConfig, NodejsConfig, Platform, PlatformsConfig, PlaywrightConfig,
+    PythonConfig, RustConfig, Viewport, WebConfig,
 };
 
 // ============================================================================
@@ -70,11 +70,18 @@ impl<'de> Deserialize<'de> for DependsOn {
         #[serde(untagged)]
         enum DependsOnHelper {
             List(Vec<String>),
-            Full { workflows: Vec<String>, #[serde(default)] always: bool },
+            Full {
+                workflows: Vec<String>,
+                #[serde(default)]
+                always: bool,
+            },
         }
 
         match DependsOnHelper::deserialize(deserializer)? {
-            DependsOnHelper::List(workflows) => Ok(DependsOn { workflows, always: false }),
+            DependsOnHelper::List(workflows) => Ok(DependsOn {
+                workflows,
+                always: false,
+            }),
             DependsOnHelper::Full { workflows, always } => Ok(DependsOn { workflows, always }),
         }
     }

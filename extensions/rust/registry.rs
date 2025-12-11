@@ -69,11 +69,7 @@ impl AssertionResult {
     }
 
     /// Create a failed assertion result with values
-    pub fn fail_with_values(
-        message: impl Into<String>,
-        actual: Value,
-        expected: Value,
-    ) -> Self {
+    pub fn fail_with_values(message: impl Into<String>, actual: Value, expected: Value) -> Self {
         Self {
             success: false,
             message: Some(message.into()),

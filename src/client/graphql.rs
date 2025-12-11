@@ -71,7 +71,12 @@ pub mod queries {
 }
 
 pub mod mutations {
-    pub fn register_run(run_id: &str, workflows_dir: &str, started_at: &str, agent_token: &str) -> String {
+    pub fn register_run(
+        run_id: &str,
+        workflows_dir: &str,
+        started_at: &str,
+        agent_token: &str,
+    ) -> String {
         format!(
             r#"mutation {{
                 registerRun(input: {{
@@ -174,7 +179,9 @@ impl GraphQLClient {
             anyhow::bail!("GraphQL error: {}", messages.join(", "));
         }
 
-        result.data.ok_or_else(|| anyhow::anyhow!("No data returned"))
+        result
+            .data
+            .ok_or_else(|| anyhow::anyhow!("No data returned"))
     }
 
     pub async fn health(&self) -> anyhow::Result<String> {
@@ -256,7 +263,12 @@ impl GraphQLClient {
         Ok(())
     }
 
-    pub async fn complete_run(&self, run_id: &str, success: bool, completed_at: &str) -> anyhow::Result<()> {
+    pub async fn complete_run(
+        &self,
+        run_id: &str,
+        success: bool,
+        completed_at: &str,
+    ) -> anyhow::Result<()> {
         let query = mutations::complete_run(run_id, success, completed_at);
         let _: serde_json::Value = self.query(&query).await?;
         Ok(())

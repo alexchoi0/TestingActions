@@ -22,6 +22,8 @@
 //!         browser: firefox
 //! ```
 
+type WorkflowFilter = Box<dyn Fn(&str) -> bool + Send + Sync>;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -75,7 +77,7 @@ pub struct WorkflowDirectoryRunner {
     max_concurrent: usize,
     fail_fast: bool,
     platforms: PlatformsConfig,
-    filter: Option<Box<dyn Fn(&str) -> bool + Send + Sync>>,
+    filter: Option<WorkflowFilter>,
     config: Option<RunnerConfig>,
 }
 
@@ -104,7 +106,10 @@ impl WorkflowDirectoryRunner {
 
     /// Check if this runner has multiple named profiles
     pub fn has_multiple_profiles(&self) -> bool {
-        self.config.as_ref().map(|c| c.has_profiles()).unwrap_or(false)
+        self.config
+            .as_ref()
+            .map(|c| c.has_profiles())
+            .unwrap_or(false)
     }
 
     pub fn parallel(mut self, max: usize) -> Self {
@@ -233,7 +238,10 @@ impl WorkflowDirectoryRunner {
             Arc::new(RwLock::new(HashMap::new()));
         let skipped: Arc<RwLock<Vec<String>>> = Arc::new(RwLock::new(Vec::new()));
         let pending: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(
-            dag.workflow_names().into_iter().map(|s| s.to_string()).collect(),
+            dag.workflow_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect(),
         ));
         let failed: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
         let fail_fast = self.fail_fast;
@@ -296,6 +304,7 @@ impl WorkflowDirectoryRunner {
             }
         }
 
+        #[allow(clippy::too_many_arguments)]
         fn spawn_ready_workflows(
             dag: Arc<WorkflowDAG>,
             pending: Arc<RwLock<HashSet<String>>>,

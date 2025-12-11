@@ -4,7 +4,7 @@ use common::*;
 use std::process::Command;
 
 fn cli_command() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_testing-actions"))
+    Command::new(env!("CARGO_BIN_EXE_ta-run"))
 }
 
 #[test]
@@ -26,7 +26,7 @@ fn test_cli_version() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("testing-actions"));
+    assert!(stdout.contains("ta-run"));
 }
 
 #[test]
@@ -198,12 +198,7 @@ fn test_cli_run_dir_with_filter() {
     write_workflow(dir.path(), "other.yaml", &simple_workflow("other"));
 
     let output = cli_command()
-        .args([
-            "run-dir",
-            dir.path().to_str().unwrap(),
-            "--filter",
-            "test-",
-        ])
+        .args(["run-dir", dir.path().to_str().unwrap(), "--filter", "test-"])
         .output()
         .unwrap();
 
@@ -347,7 +342,10 @@ fn test_cli_validate_invalid_yaml() {
         .expect("Failed to write");
 
     let output = cli_command()
-        .args(["validate", dir.path().join("invalid.yaml").to_str().unwrap()])
+        .args([
+            "validate",
+            dir.path().join("invalid.yaml").to_str().unwrap(),
+        ])
         .output()
         .unwrap();
 

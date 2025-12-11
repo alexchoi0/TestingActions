@@ -12,7 +12,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
 use super::rpc::{send_request, spawn_communication_task, RequestSender};
-use super::{AssertionResult, BridgeError, NodejsBridgeOperations, NodejsOperations};
+use super::{AssertionResult, BridgeError};
 use crate::engine::ClockSyncState;
 use crate::workflow::NodejsConfig;
 
@@ -26,9 +26,17 @@ pub struct NodejsBridge {
 impl NodejsBridge {
     /// Create a new Node.js bridge from configuration
     pub async fn from_config(config: &NodejsConfig) -> Result<Self, BridgeError> {
-        let working_dir = config.working_dir.clone().unwrap_or_else(|| ".".to_string());
-        Self::new(&config.registry, &working_dir, config.typescript, config.env_file.as_deref())
-            .await
+        let working_dir = config
+            .working_dir
+            .clone()
+            .unwrap_or_else(|| ".".to_string());
+        Self::new(
+            &config.registry,
+            &working_dir,
+            config.typescript,
+            config.env_file.as_deref(),
+        )
+        .await
     }
 
     /// Create a new Node.js bridge
@@ -83,35 +91,60 @@ impl NodejsBridge {
     async fn request(&self, method: &str, params: Value) -> Result<Value, BridgeError> {
         send_request(&self.request_tx, method, params).await
     }
-}
 
-#[async_trait]
-impl NodejsBridgeOperations for NodejsBridge {
-    async fn fn_call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
+    /// Call a registered function by name
+    pub async fn fn_call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
         let result = self
             .request("fn.call", serde_json::json!({ "name": name, "args": args }))
             .await?;
         Ok(result.get("result").cloned().unwrap_or(Value::Null))
     }
 
+    /// Sync the mock clock state to the Node.js bridge
+    pub async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
+        self.request("clock.sync", serde_json::to_value(state).unwrap())
+            .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl super::Bridge for NodejsBridge {
+    fn platform(&self) -> crate::workflow::Platform {
+        crate::workflow::Platform::Nodejs
+    }
+
+    async fn call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
+        self.fn_call(name, args).await
+    }
+
     async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError> {
-        let result = self.request("ctx.get", serde_json::json!({ "key": key })).await?;
+        let result = self
+            .request("ctx.get", serde_json::json!({ "key": key }))
+            .await?;
         let value = result.get("value").cloned().unwrap_or(Value::Null);
         Ok(if value.is_null() { None } else { Some(value) })
     }
 
     async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError> {
-        self.request("ctx.set", serde_json::json!({ "key": key, "value": value })).await?;
+        self.request("ctx.set", serde_json::json!({ "key": key, "value": value }))
+            .await?;
         Ok(())
     }
 
     async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError> {
-        let result = self.request("ctx.clear", serde_json::json!({ "pattern": pattern })).await?;
+        let result = self
+            .request("ctx.clear", serde_json::json!({ "pattern": pattern }))
+            .await?;
         Ok(result.get("cleared").and_then(|v| v.as_u64()).unwrap_or(0))
     }
 
     async fn mock_set(&self, target: &str, mock_value: Value) -> Result<(), BridgeError> {
-        self.request("mock.set", serde_json::json!({ "target": target, "value": mock_value })).await?;
+        self.request(
+            "mock.set",
+            serde_json::json!({ "target": target, "value": mock_value }),
+        )
+        .await?;
         Ok(())
     }
 
@@ -121,7 +154,8 @@ impl NodejsBridgeOperations for NodejsBridge {
     }
 
     async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError> {
-        self.request("hook.call", serde_json::json!({ "hook": hook_name })).await?;
+        self.request("hook.call", serde_json::json!({ "hook": hook_name }))
+            .await?;
         Ok(())
     }
 
@@ -131,12 +165,21 @@ impl NodejsBridgeOperations for NodejsBridge {
         params: HashMap<String, Value>,
     ) -> Result<AssertionResult, BridgeError> {
         let result = self
-            .request("assert.custom", serde_json::json!({ "name": assertion_name, "params": params }))
+            .request(
+                "assert.custom",
+                serde_json::json!({ "name": assertion_name, "params": params }),
+            )
             .await?;
 
         Ok(AssertionResult {
-            success: result.get("success").and_then(|v| v.as_bool()).unwrap_or(false),
-            message: result.get("message").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            success: result
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            message: result
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             actual: result.get("actual").cloned(),
             expected: result.get("expected").cloned(),
         })
@@ -168,16 +211,29 @@ impl NodejsBridgeOperations for NodejsBridge {
         .await?;
         Ok(())
     }
-}
 
-impl NodejsOperations for NodejsBridge {}
+    async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
+        NodejsBridge::sync_clock(self, state).await
+    }
 
-impl NodejsBridge {
-    /// Sync the mock clock state to the Node.js bridge
-    pub async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
-        self.request("clock.sync", serde_json::to_value(state).unwrap())
-            .await?;
-        Ok(())
+    fn supports_context(&self) -> bool {
+        true
+    }
+
+    fn supports_hooks(&self) -> bool {
+        true
+    }
+
+    fn supports_mocking(&self) -> bool {
+        true
+    }
+
+    fn supports_clock(&self) -> bool {
+        true
+    }
+
+    fn as_nodejs(&self) -> Option<&NodejsBridge> {
+        Some(self)
     }
 }
 

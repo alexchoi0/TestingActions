@@ -17,7 +17,7 @@ use std::collections::HashMap;
 // ============================================================================
 
 /// Execution platform for workflows
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     /// Browser automation via Playwright (default)

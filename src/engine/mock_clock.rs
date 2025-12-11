@@ -109,10 +109,7 @@ impl MockClock {
         let current = state.virtual_time.unwrap_or_else(Utc::now);
 
         if target < current {
-            return Err(ClockError::CannotGoBackwards {
-                current,
-                target,
-            });
+            return Err(ClockError::CannotGoBackwards { current, target });
         }
 
         state.virtual_time = Some(target);
@@ -152,7 +149,8 @@ impl MockClock {
         }
 
         let current = state.virtual_time.unwrap();
-        state.virtual_time = Some(current + chrono::Duration::from_std(state.step_duration).unwrap());
+        state.virtual_time =
+            Some(current + chrono::Duration::from_std(state.step_duration).unwrap());
     }
 
     /// Set the timezone offset (in hours from UTC)
@@ -179,7 +177,8 @@ impl MockClock {
     pub async fn now_local(&self) -> DateTime<FixedOffset> {
         let state = self.inner.read().await;
         let utc_time = state.virtual_time.unwrap_or_else(Utc::now);
-        let offset = FixedOffset::east_opt(state.timezone_offset_secs).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+        let offset = FixedOffset::east_opt(state.timezone_offset_secs)
+            .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
         utc_time.with_timezone(&offset)
     }
 
@@ -235,7 +234,9 @@ pub enum ClockError {
 pub fn parse_duration(s: &str) -> Result<Duration, ClockError> {
     let s = s.trim();
     if s.is_empty() {
-        return Err(ClockError::InvalidDurationFormat("empty string".to_string()));
+        return Err(ClockError::InvalidDurationFormat(
+            "empty string".to_string(),
+        ));
     }
 
     let mut total = Duration::ZERO;
@@ -340,17 +341,17 @@ pub fn parse_timezone(s: &str) -> Result<i32, ClockError> {
         let rest = &s[1..];
 
         if let Some((hours_str, mins_str)) = rest.split_once(':') {
-            let hours: i32 = hours_str.parse().map_err(|_| {
-                ClockError::InvalidTimezone(format!("invalid hours in '{}'", s))
-            })?;
-            let mins: i32 = mins_str.parse().map_err(|_| {
-                ClockError::InvalidTimezone(format!("invalid minutes in '{}'", s))
-            })?;
+            let hours: i32 = hours_str
+                .parse()
+                .map_err(|_| ClockError::InvalidTimezone(format!("invalid hours in '{}'", s)))?;
+            let mins: i32 = mins_str
+                .parse()
+                .map_err(|_| ClockError::InvalidTimezone(format!("invalid minutes in '{}'", s)))?;
             return Ok(sign * (hours * 3600 + mins * 60));
         } else {
-            let hours: i32 = rest.parse().map_err(|_| {
-                ClockError::InvalidTimezone(format!("invalid offset '{}'", s))
-            })?;
+            let hours: i32 = rest
+                .parse()
+                .map_err(|_| ClockError::InvalidTimezone(format!("invalid offset '{}'", s)))?;
             return Ok(sign * hours * 3600);
         }
     }
@@ -379,7 +380,7 @@ pub fn parse_timezone(s: &str) -> Result<i32, ClockError> {
         "CEST" => 2,
         "EEST" => 3,
         // Asian timezones
-        "IST" => 5,  // India (5:30, but we simplify)
+        "IST" => 5, // India (5:30, but we simplify)
         "JST" => 9,
         "KST" => 9,
         "CST_ASIA" => 8, // China
@@ -387,7 +388,7 @@ pub fn parse_timezone(s: &str) -> Result<i32, ClockError> {
         "HKT" => 8,
         // Australian timezones
         "AEST" => 10,
-        "ACST" => 9,  // Actually 9:30
+        "ACST" => 9, // Actually 9:30
         "AWST" => 8,
         "AEDT" => 11,
         "ACDT" => 10, // Actually 10:30
