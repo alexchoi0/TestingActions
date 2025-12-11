@@ -1,8 +1,8 @@
 //! Playwright action implementations
 
-use std::collections::HashMap;
 use crate::bridge::PlaywrightBridge;
 use crate::engine::error::ExecutorError;
+use std::collections::HashMap;
 
 pub async fn execute_page_action(
     bridge: &PlaywrightBridge,
@@ -186,9 +186,7 @@ pub async fn execute_wait_action(
             let selector = params
                 .get("selector")
                 .ok_or_else(|| ExecutorError::MissingParameter("selector".to_string()))?;
-            bridge
-                .wait_for_selector(page_id, selector, timeout)
-                .await?;
+            bridge.wait_for_selector(page_id, selector, timeout).await?;
         }
         "navigation" => {
             bridge.wait_for_navigation(page_id, timeout).await?;

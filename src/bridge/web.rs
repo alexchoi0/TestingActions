@@ -85,11 +85,7 @@ impl WebBridge {
                 request.basic_auth(username, Some(password))
             }
             Some(WebAuthConfig::ApiKey { header, key }) => request.header(header, key),
-            Some(WebAuthConfig::OAuth2 { .. }) => {
-                // OAuth2 token refresh would be handled separately
-                // For now, expect the token to be pre-fetched
-                request
-            }
+            Some(WebAuthConfig::OAuth2 { .. }) => request,
             None => request,
         }
     }
@@ -99,12 +95,10 @@ impl WebBridge {
         mut request: reqwest::RequestBuilder,
         extra_headers: Option<&HashMap<String, String>>,
     ) -> reqwest::RequestBuilder {
-        // Apply default headers from config
         for (key, value) in &self.config.headers {
             request = request.header(key, value);
         }
 
-        // Apply extra headers (override defaults)
         if let Some(headers) = extra_headers {
             for (key, value) in headers {
                 request = request.header(key, value);
@@ -180,18 +174,13 @@ impl WebBridge {
                 }
             };
 
-            // Apply query parameters
             if let Some(query_params) = query {
                 request = request.query(query_params);
             }
 
-            // Apply auth
             request = self.apply_auth(request);
-
-            // Apply headers
             request = self.apply_headers(request, headers);
 
-            // Apply body
             if let Some(ref body_value) = body {
                 request = request.json(body_value);
             }
@@ -203,14 +192,12 @@ impl WebBridge {
                     let status = response.status().as_u16();
                     let elapsed_ms = start.elapsed().as_millis() as u64;
 
-                    // Collect response headers
                     let response_headers: HashMap<String, String> = response
                         .headers()
                         .iter()
                         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                         .collect();
 
-                    // Check if we should retry
                     if self.should_retry(status, attempt) {
                         last_error = Some(BridgeError::HttpError {
                             status,
@@ -219,7 +206,6 @@ impl WebBridge {
                         continue;
                     }
 
-                    // Parse response body
                     let body_text = response
                         .text()
                         .await
@@ -244,7 +230,6 @@ impl WebBridge {
                     warn!("Request failed: {}", e);
                     last_error = Some(BridgeError::ServerError(e.to_string()));
 
-                    // Check if it's a connection error that might be retryable
                     if e.is_connect() || e.is_timeout() {
                         continue;
                     }
@@ -256,57 +241,8 @@ impl WebBridge {
 
         Err(last_error.unwrap_or_else(|| BridgeError::ServerError("Request failed".to_string())))
     }
-}
 
-#[async_trait]
-pub trait WebBridgeOperations: Send + Sync {
-    async fn get(
-        &self,
-        path: &str,
-        headers: Option<HashMap<String, String>>,
-        query: Option<HashMap<String, String>>,
-    ) -> Result<WebResponse, BridgeError>;
-
-    async fn post(
-        &self,
-        path: &str,
-        body: Option<Value>,
-        headers: Option<HashMap<String, String>>,
-    ) -> Result<WebResponse, BridgeError>;
-
-    async fn put(
-        &self,
-        path: &str,
-        body: Option<Value>,
-        headers: Option<HashMap<String, String>>,
-    ) -> Result<WebResponse, BridgeError>;
-
-    async fn patch(
-        &self,
-        path: &str,
-        body: Option<Value>,
-        headers: Option<HashMap<String, String>>,
-    ) -> Result<WebResponse, BridgeError>;
-
-    async fn delete(
-        &self,
-        path: &str,
-        headers: Option<HashMap<String, String>>,
-    ) -> Result<WebResponse, BridgeError>;
-
-    async fn request(
-        &self,
-        method: &str,
-        path: &str,
-        body: Option<Value>,
-        headers: Option<HashMap<String, String>>,
-        query: Option<HashMap<String, String>>,
-    ) -> Result<WebResponse, BridgeError>;
-}
-
-#[async_trait]
-impl WebBridgeOperations for WebBridge {
-    async fn get(
+    pub async fn get(
         &self,
         path: &str,
         headers: Option<HashMap<String, String>>,
@@ -316,7 +252,7 @@ impl WebBridgeOperations for WebBridge {
             .await
     }
 
-    async fn post(
+    pub async fn post(
         &self,
         path: &str,
         body: Option<Value>,
@@ -326,7 +262,7 @@ impl WebBridgeOperations for WebBridge {
             .await
     }
 
-    async fn put(
+    pub async fn put(
         &self,
         path: &str,
         body: Option<Value>,
@@ -336,7 +272,7 @@ impl WebBridgeOperations for WebBridge {
             .await
     }
 
-    async fn patch(
+    pub async fn patch(
         &self,
         path: &str,
         body: Option<Value>,
@@ -346,7 +282,7 @@ impl WebBridgeOperations for WebBridge {
             .await
     }
 
-    async fn delete(
+    pub async fn delete(
         &self,
         path: &str,
         headers: Option<HashMap<String, String>>,
@@ -355,7 +291,7 @@ impl WebBridgeOperations for WebBridge {
             .await
     }
 
-    async fn request(
+    pub async fn request(
         &self,
         method: &str,
         path: &str,
@@ -368,13 +304,30 @@ impl WebBridgeOperations for WebBridge {
     }
 }
 
-pub trait WebOperations {
-    fn supports_http(&self) -> bool {
-        true
+#[async_trait]
+impl super::Bridge for WebBridge {
+    fn platform(&self) -> crate::workflow::Platform {
+        crate::workflow::Platform::Web
+    }
+
+    async fn call(&self, method: &str, args: Value) -> Result<Value, BridgeError> {
+        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+        let body = args.get("body").cloned();
+        let headers: Option<HashMap<String, String>> = args
+            .get("headers")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let query: Option<HashMap<String, String>> = args
+            .get("query")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+        let response = self.request(method, path, body, headers, query).await?;
+        Ok(serde_json::to_value(&response).unwrap_or(Value::Null))
+    }
+
+    fn as_web(&self) -> Option<&WebBridge> {
+        Some(self)
     }
 }
-
-impl WebOperations for WebBridge {}
 
 impl WebResponse {
     pub fn to_api_response(&self) -> ApiResponse {
@@ -420,14 +373,8 @@ mod tests {
         let config = make_test_config();
         let bridge = WebBridge::new(config).unwrap();
 
-        assert_eq!(
-            bridge.build_url("/users"),
-            "https://api.example.com/users"
-        );
-        assert_eq!(
-            bridge.build_url("users"),
-            "https://api.example.com/users"
-        );
+        assert_eq!(bridge.build_url("/users"), "https://api.example.com/users");
+        assert_eq!(bridge.build_url("users"), "https://api.example.com/users");
     }
 
     #[test]
@@ -436,10 +383,7 @@ mod tests {
         config.base_url = "https://api.example.com/".to_string();
         let bridge = WebBridge::new(config).unwrap();
 
-        assert_eq!(
-            bridge.build_url("/users"),
-            "https://api.example.com/users"
-        );
+        assert_eq!(bridge.build_url("/users"), "https://api.example.com/users");
     }
 
     #[test]
@@ -497,7 +441,7 @@ mod tests {
         assert!(bridge.should_retry(429, 0));
         assert!(bridge.should_retry(500, 1));
         assert!(!bridge.should_retry(404, 0));
-        assert!(!bridge.should_retry(429, 3)); // exceeded max attempts
+        assert!(!bridge.should_retry(429, 3));
     }
 
     #[test]
@@ -516,6 +460,6 @@ mod tests {
         assert_eq!(bridge.get_retry_delay(2), Duration::from_millis(2000));
         assert_eq!(bridge.get_retry_delay(3), Duration::from_millis(4000));
         assert_eq!(bridge.get_retry_delay(4), Duration::from_millis(8000));
-        assert_eq!(bridge.get_retry_delay(5), Duration::from_millis(10000)); // capped at max
+        assert_eq!(bridge.get_retry_delay(5), Duration::from_millis(10000));
     }
 }

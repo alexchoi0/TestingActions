@@ -54,7 +54,10 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     println!("\n=== Results ===\n");
-    println!("Overall success: {}\n", if result.success { "YES" } else { "NO" });
+    println!(
+        "Overall success: {}\n",
+        if result.success { "YES" } else { "NO" }
+    );
 
     for level in &result.execution_order {
         for name in level {

@@ -1,9 +1,9 @@
 //! Python bridge action implementations
 
-use std::collections::HashMap;
-use crate::bridge::{PythonBridge, PythonBridgeOperations};
+use crate::bridge::{Bridge, PythonBridge};
 use crate::engine::error::ExecutorError;
 use crate::engine::result::StepResult;
+use std::collections::HashMap;
 
 pub async fn execute_py_action(
     bridge: &PythonBridge,
@@ -52,9 +52,9 @@ pub async fn execute_assert_action(
     let result = bridge.assert_custom(action, assertion_params).await?;
 
     if !result.success {
-        let message = result.message.unwrap_or_else(|| {
-            format!("Custom assertion '{}' failed", action)
-        });
+        let message = result
+            .message
+            .unwrap_or_else(|| format!("Custom assertion '{}' failed", action));
         return Err(ExecutorError::AssertionFailed(message));
     }
 

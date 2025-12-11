@@ -1,7 +1,7 @@
 //! Execution result types
 
-use std::collections::HashMap;
 use crate::bridge::ApiResponse;
+use std::collections::HashMap;
 
 /// Result of a step execution
 #[derive(Debug, Clone)]

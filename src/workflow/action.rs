@@ -62,7 +62,10 @@ impl ActionCategory {
     pub fn requires_nodejs(&self) -> bool {
         matches!(
             self,
-            ActionCategory::Node | ActionCategory::Ctx | ActionCategory::Mock | ActionCategory::Hook
+            ActionCategory::Node
+                | ActionCategory::Ctx
+                | ActionCategory::Mock
+                | ActionCategory::Hook
         )
     }
 
@@ -190,21 +193,13 @@ impl ParsedAction {
             Platform::Nodejs => {
                 self.category.requires_nodejs() || self.category.is_platform_agnostic()
             }
-            Platform::Rust => {
-                self.category.requires_rust() || self.category.is_platform_agnostic()
-            }
+            Platform::Rust => self.category.requires_rust() || self.category.is_platform_agnostic(),
             Platform::Python => {
                 self.category.requires_python() || self.category.is_platform_agnostic()
             }
-            Platform::Java => {
-                self.category.requires_java() || self.category.is_platform_agnostic()
-            }
-            Platform::Go => {
-                self.category.requires_go() || self.category.is_platform_agnostic()
-            }
-            Platform::Web => {
-                self.category.requires_web() || self.category.is_platform_agnostic()
-            }
+            Platform::Java => self.category.requires_java() || self.category.is_platform_agnostic(),
+            Platform::Go => self.category.requires_go() || self.category.is_platform_agnostic(),
+            Platform::Web => self.category.requires_web() || self.category.is_platform_agnostic(),
         }
     }
 }

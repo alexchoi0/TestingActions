@@ -143,8 +143,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     print_separator();
-    println!("\n📊 Summary: {} passed, {} failed out of {} fixtures\n",
-             passed, failed, FIXTURES.len());
+    println!(
+        "\n📊 Summary: {} passed, {} failed out of {} fixtures\n",
+        passed,
+        failed,
+        FIXTURES.len()
+    );
 
     if failed > 0 {
         std::process::exit(1);

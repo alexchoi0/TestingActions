@@ -1,9 +1,9 @@
 //! Java bridge action implementations
 
-use std::collections::HashMap;
-use crate::bridge::{JavaBridge, JavaBridgeOperations};
+use crate::bridge::{Bridge, JavaBridge};
 use crate::engine::error::ExecutorError;
 use crate::engine::result::StepResult;
+use std::collections::HashMap;
 
 pub async fn execute_java_call(
     bridge: &JavaBridge,
@@ -52,9 +52,9 @@ pub async fn execute_assert_action(
     let result = bridge.assert_custom(action, assertion_params).await?;
 
     if !result.success {
-        let message = result.message.unwrap_or_else(|| {
-            format!("Custom assertion '{}' failed", action)
-        });
+        let message = result
+            .message
+            .unwrap_or_else(|| format!("Custom assertion '{}' failed", action));
         return Err(ExecutorError::AssertionFailed(message));
     }
 

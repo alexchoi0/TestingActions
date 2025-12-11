@@ -40,7 +40,11 @@ impl GoBridge {
         } else if let Some(go_build) = &config.go_build {
             let binary_name = format!("{}_bridge", go_build.replace(['/', '\\', '.'], "_"));
             let mut build_cmd = Command::new("go");
-            build_cmd.arg("build").arg("-o").arg(&binary_name).arg(go_build);
+            build_cmd
+                .arg("build")
+                .arg("-o")
+                .arg(&binary_name)
+                .arg(go_build);
 
             if let Some(dir) = &config.working_dir {
                 build_cmd.current_dir(dir);
@@ -74,7 +78,10 @@ impl GoBridge {
             .stderr(Stdio::inherit());
 
         let mut child = cmd.spawn().map_err(|e| {
-            BridgeError::StartupFailed(format!("Failed to spawn Go process '{}': {}", binary_path, e))
+            BridgeError::StartupFailed(format!(
+                "Failed to spawn Go process '{}': {}",
+                binary_path, e
+            ))
         })?;
 
         let stdin = child.stdin.take().ok_or_else(|| {
@@ -94,83 +101,18 @@ impl GoBridge {
     async fn request(&self, method: &str, params: Value) -> Result<Value, BridgeError> {
         send_request(&self.request_tx, method, params).await
     }
-}
 
-/// Trait for Go bridge operations
-#[async_trait]
-pub trait GoBridgeOperations: Send + Sync {
-    async fn fn_call(&self, name: &str, args: Value) -> Result<Value, BridgeError>;
-    async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError>;
-    async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError>;
-    async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError>;
-    async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError>;
-    async fn assert_custom(&self, name: &str, params: HashMap<String, Value>) -> Result<AssertionResult, BridgeError>;
-    async fn set_execution_info(&self, run_id: &str, job_name: &str, step_name: &str) -> Result<(), BridgeError>;
-    async fn sync_step_outputs(&self, step_id: &str, outputs: HashMap<String, String>) -> Result<(), BridgeError>;
-    async fn list_functions(&self) -> Result<Vec<FunctionInfo>, BridgeError>;
-}
-
-#[async_trait]
-impl GoBridgeOperations for GoBridge {
-    async fn fn_call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
-        let result = self.request("fn.call", serde_json::json!({ "name": name, "args": args })).await?;
+    pub async fn fn_call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
+        let result = self
+            .request("fn.call", serde_json::json!({ "name": name, "args": args }))
+            .await?;
         Ok(result.get("result").cloned().unwrap_or(Value::Null))
     }
 
-    async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError> {
-        let result = self.request("ctx.get", serde_json::json!({ "key": key })).await?;
-        let value = result.get("value").cloned().unwrap_or(Value::Null);
-        Ok(if value.is_null() { None } else { Some(value) })
-    }
-
-    async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError> {
-        self.request("ctx.set", serde_json::json!({ "key": key, "value": value })).await?;
-        Ok(())
-    }
-
-    async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError> {
-        let result = self.request("ctx.clear", serde_json::json!({ "pattern": pattern })).await?;
-        Ok(result.get("cleared").and_then(|v| v.as_u64()).unwrap_or(0))
-    }
-
-    async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError> {
-        self.request("hook.call", serde_json::json!({ "hook": hook_name })).await?;
-        Ok(())
-    }
-
-    async fn assert_custom(
-        &self,
-        assertion_name: &str,
-        params: HashMap<String, Value>,
-    ) -> Result<AssertionResult, BridgeError> {
+    pub async fn list_functions(&self) -> Result<Vec<FunctionInfo>, BridgeError> {
         let result = self
-            .request("assert.custom", serde_json::json!({ "name": assertion_name, "params": params }))
+            .request("list_functions", serde_json::json!({}))
             .await?;
-
-        Ok(AssertionResult {
-            success: result.get("success").and_then(|v| v.as_bool()).unwrap_or(false),
-            message: result.get("message").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            actual: result.get("actual").cloned(),
-            expected: result.get("expected").cloned(),
-        })
-    }
-
-    async fn set_execution_info(&self, run_id: &str, job_name: &str, step_name: &str) -> Result<(), BridgeError> {
-        self.request(
-            "ctx.setExecutionInfo",
-            serde_json::json!({ "runId": run_id, "jobName": job_name, "stepName": step_name }),
-        )
-        .await?;
-        Ok(())
-    }
-
-    async fn sync_step_outputs(&self, step_id: &str, outputs: HashMap<String, String>) -> Result<(), BridgeError> {
-        self.request("ctx.syncStepOutputs", serde_json::json!({ "stepId": step_id, "outputs": outputs })).await?;
-        Ok(())
-    }
-
-    async fn list_functions(&self) -> Result<Vec<FunctionInfo>, BridgeError> {
-        let result = self.request("list_functions", serde_json::json!({})).await?;
         let functions = result
             .get("functions")
             .and_then(|v| v.as_array())
@@ -186,18 +128,122 @@ impl GoBridgeOperations for GoBridge {
             .unwrap_or_default();
         Ok(functions)
     }
-}
 
-/// Marker trait for Go-specific operations
-pub trait GoOperations {}
-impl GoOperations for GoBridge {}
-
-impl GoBridge {
-    /// Sync the mock clock state to the Go bridge
     pub async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
         self.request("clock.sync", serde_json::to_value(state).unwrap())
             .await?;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl super::Bridge for GoBridge {
+    fn platform(&self) -> crate::workflow::Platform {
+        crate::workflow::Platform::Go
+    }
+
+    async fn call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
+        self.fn_call(name, args).await
+    }
+
+    async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError> {
+        let result = self
+            .request("ctx.get", serde_json::json!({ "key": key }))
+            .await?;
+        let value = result.get("value").cloned().unwrap_or(Value::Null);
+        Ok(if value.is_null() { None } else { Some(value) })
+    }
+
+    async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError> {
+        self.request("ctx.set", serde_json::json!({ "key": key, "value": value }))
+            .await?;
+        Ok(())
+    }
+
+    async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError> {
+        let result = self
+            .request("ctx.clear", serde_json::json!({ "pattern": pattern }))
+            .await?;
+        Ok(result.get("cleared").and_then(|v| v.as_u64()).unwrap_or(0))
+    }
+
+    async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError> {
+        self.request("hook.call", serde_json::json!({ "hook": hook_name }))
+            .await?;
+        Ok(())
+    }
+
+    async fn assert_custom(
+        &self,
+        assertion_name: &str,
+        params: HashMap<String, Value>,
+    ) -> Result<AssertionResult, BridgeError> {
+        let result = self
+            .request(
+                "assert.custom",
+                serde_json::json!({ "name": assertion_name, "params": params }),
+            )
+            .await?;
+
+        Ok(AssertionResult {
+            success: result
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            message: result
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            actual: result.get("actual").cloned(),
+            expected: result.get("expected").cloned(),
+        })
+    }
+
+    async fn set_execution_info(
+        &self,
+        run_id: &str,
+        job_name: &str,
+        step_name: &str,
+    ) -> Result<(), BridgeError> {
+        self.request(
+            "ctx.setExecutionInfo",
+            serde_json::json!({ "runId": run_id, "jobName": job_name, "stepName": step_name }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn sync_step_outputs(
+        &self,
+        step_id: &str,
+        outputs: HashMap<String, String>,
+    ) -> Result<(), BridgeError> {
+        self.request(
+            "ctx.syncStepOutputs",
+            serde_json::json!({ "stepId": step_id, "outputs": outputs }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
+        GoBridge::sync_clock(self, state).await
+    }
+
+    fn supports_context(&self) -> bool {
+        true
+    }
+
+    fn supports_hooks(&self) -> bool {
+        true
+    }
+
+    fn supports_clock(&self) -> bool {
+        true
+    }
+
+    fn as_go(&self) -> Option<&GoBridge> {
+        Some(self)
     }
 }
 
@@ -235,7 +281,10 @@ mod tests {
     #[test]
     fn test_go_config_with_env() {
         let mut env = HashMap::new();
-        env.insert("DATABASE_URL".to_string(), "postgres://localhost/test".to_string());
+        env.insert(
+            "DATABASE_URL".to_string(),
+            "postgres://localhost/test".to_string(),
+        );
         let config = GoConfig {
             binary: Some("./registry".to_string()),
             go_run: None,
@@ -244,7 +293,10 @@ mod tests {
             env,
             hooks: Default::default(),
         };
-        assert_eq!(config.env.get("DATABASE_URL"), Some(&"postgres://localhost/test".to_string()));
+        assert_eq!(
+            config.env.get("DATABASE_URL"),
+            Some(&"postgres://localhost/test".to_string())
+        );
     }
 
     #[test]

@@ -33,8 +33,16 @@ async fn test_run_single_workflow() {
 async fn test_run_linear_chain() {
     let dir = create_test_dir();
     write_workflow(dir.path(), "01.yaml", &simple_workflow("first"));
-    write_workflow(dir.path(), "02.yaml", &workflow_with_deps("second", &["first"]));
-    write_workflow(dir.path(), "03.yaml", &workflow_with_deps("third", &["second"]));
+    write_workflow(
+        dir.path(),
+        "02.yaml",
+        &workflow_with_deps("second", &["first"]),
+    );
+    write_workflow(
+        dir.path(),
+        "03.yaml",
+        &workflow_with_deps("third", &["second"]),
+    );
 
     let result = run_workflow_directory(dir.path()).await.unwrap();
 

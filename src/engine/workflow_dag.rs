@@ -11,7 +11,10 @@ use crate::workflow::Workflow;
 #[derive(Debug, thiserror::Error)]
 pub enum DAGError {
     #[error("Workflow '{workflow}' depends on non-existent workflow '{dependency}'")]
-    MissingDependency { workflow: String, dependency: String },
+    MissingDependency {
+        workflow: String,
+        dependency: String,
+    },
 
     #[error("Cyclic dependency detected in workflows")]
     CyclicDependency,
@@ -46,7 +49,14 @@ impl WorkflowDAG {
             let depends_on = &workflow.depends_on;
             let deps = depends_on.workflows.clone();
             let always = depends_on.always;
-            nodes.insert(name, WorkflowNode { workflow, dependencies: deps, always });
+            nodes.insert(
+                name,
+                WorkflowNode {
+                    workflow,
+                    dependencies: deps,
+                    always,
+                },
+            );
         }
 
         for (name, node) in &nodes {
@@ -68,7 +78,6 @@ impl WorkflowDAG {
         })
     }
 
-
     fn compute_execution_levels(
         nodes: &HashMap<String, WorkflowNode>,
     ) -> Result<Vec<Vec<String>>, DAGError> {
@@ -79,7 +88,10 @@ impl WorkflowDAG {
             in_degree.entry(name.as_str()).or_insert(0);
             for dep in &node.dependencies {
                 *in_degree.entry(name.as_str()).or_insert(0) += 1;
-                dependents.entry(dep.as_str()).or_default().push(name.as_str());
+                dependents
+                    .entry(dep.as_str())
+                    .or_default()
+                    .push(name.as_str());
             }
         }
 
@@ -179,7 +191,12 @@ mod tests {
                         name: Some("Test step".to_string()),
                         platform: None,
                         uses: "page/goto".to_string(),
-                        with: [("url".to_string(), serde_yaml::Value::String("https://example.com".to_string()))].into_iter().collect(),
+                        with: [(
+                            "url".to_string(),
+                            serde_yaml::Value::String("https://example.com".to_string()),
+                        )]
+                        .into_iter()
+                        .collect(),
                         env: Default::default(),
                         condition: None,
                         id: None,
@@ -246,9 +263,7 @@ mod tests {
 
     #[test]
     fn test_missing_dependency() {
-        let workflows = vec![
-            make_workflow("tests", vec!["setup"]),
-        ];
+        let workflows = vec![make_workflow("tests", vec!["setup"])];
 
         let result = WorkflowDAG::build(workflows);
         assert!(matches!(result, Err(DAGError::MissingDependency { .. })));

@@ -83,7 +83,12 @@ impl RunEvent {
         }
     }
 
-    pub fn workflow_completed(run_id: &str, workflow_name: &str, success: bool, error: Option<String>) -> Self {
+    pub fn workflow_completed(
+        run_id: &str,
+        workflow_name: &str,
+        success: bool,
+        error: Option<String>,
+    ) -> Self {
         Self {
             event_type: EventType::WorkflowCompleted,
             run_id: run_id.to_string(),
@@ -143,7 +148,13 @@ impl RunEvent {
         }
     }
 
-    pub fn step_started(run_id: &str, workflow_name: &str, job_name: &str, step_index: usize, step_name: &str) -> Self {
+    pub fn step_started(
+        run_id: &str,
+        workflow_name: &str,
+        job_name: &str,
+        step_index: usize,
+        step_name: &str,
+    ) -> Self {
         Self {
             event_type: EventType::StepStarted,
             run_id: run_id.to_string(),

@@ -167,12 +167,11 @@ impl RunnerConfig {
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self, crate::workflow::LoadError> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)?;
-        let config: RunnerConfig = serde_yaml::from_str(&content).map_err(|e| {
-            crate::workflow::LoadError::Yaml {
+        let config: RunnerConfig =
+            serde_yaml::from_str(&content).map_err(|e| crate::workflow::LoadError::Yaml {
                 file: path.display().to_string(),
                 error: e,
-            }
-        })?;
+            })?;
         Ok(config)
     }
 }

@@ -12,19 +12,18 @@ use std::sync::LazyLock;
 
 use super::context::ExecutionContext;
 
-static EXPRESSION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$\{\{\s*([^}]+)\s*\}\}").unwrap()
-});
+static EXPRESSION_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\{\{\s*([^}]+)\s*\}\}").unwrap());
 
 /// Errors that can occur during expression evaluation
 #[derive(Debug, thiserror::Error)]
 pub enum ExpressionError {
     #[error("Unknown variable: {0}")]
     UnknownVariable(String),
-    
+
     #[error("Invalid expression syntax: {0}")]
     InvalidSyntax(String),
-    
+
     #[error("Missing context: {0}")]
     MissingContext(String),
 }
@@ -32,27 +31,27 @@ pub enum ExpressionError {
 /// Evaluate all expressions in a string
 pub fn evaluate(input: &str, ctx: &ExecutionContext) -> Result<String, ExpressionError> {
     let mut result = input.to_string();
-    
+
     // Find all expressions and evaluate them
     for cap in EXPRESSION_REGEX.captures_iter(input) {
         let full_match = cap.get(0).unwrap().as_str();
         let expr = cap.get(1).unwrap().as_str().trim();
-        
+
         let value = evaluate_single(expr, ctx)?;
         result = result.replace(full_match, &value);
     }
-    
+
     Ok(result)
 }
 
 /// Evaluate a single expression (without the ${{ }} wrapper)
 fn evaluate_single(expr: &str, ctx: &ExecutionContext) -> Result<String, ExpressionError> {
     let parts: Vec<&str> = expr.split('.').collect();
-    
+
     if parts.is_empty() {
         return Err(ExpressionError::InvalidSyntax(expr.to_string()));
     }
-    
+
     match parts[0] {
         "env" => {
             if parts.len() != 2 {
@@ -66,7 +65,7 @@ fn evaluate_single(expr: &str, ctx: &ExecutionContext) -> Result<String, Express
                 .cloned()
                 .ok_or_else(|| ExpressionError::UnknownVariable(format!("env.{}", parts[1])))
         }
-        
+
         "secrets" => {
             if parts.len() != 2 {
                 return Err(ExpressionError::InvalidSyntax(format!(
@@ -79,7 +78,7 @@ fn evaluate_single(expr: &str, ctx: &ExecutionContext) -> Result<String, Express
                 .cloned()
                 .ok_or_else(|| ExpressionError::UnknownVariable(format!("secrets.{}", parts[1])))
         }
-        
+
         "steps" => {
             // steps.step_id.outputs.output_name
             if parts.len() != 4 || parts[2] != "outputs" {
@@ -88,16 +87,11 @@ fn evaluate_single(expr: &str, ctx: &ExecutionContext) -> Result<String, Express
                     expr
                 )));
             }
-            ctx.get_output(parts[1], parts[3])
-                .cloned()
-                .ok_or_else(|| {
-                    ExpressionError::UnknownVariable(format!(
-                        "steps.{}.outputs.{}",
-                        parts[1], parts[3]
-                    ))
-                })
+            ctx.get_output(parts[1], parts[3]).cloned().ok_or_else(|| {
+                ExpressionError::UnknownVariable(format!("steps.{}.outputs.{}", parts[1], parts[3]))
+            })
         }
-        
+
         "jobs" => {
             // jobs.job_name.outputs.output_name
             if parts.len() != 4 || parts[2] != "outputs" {
@@ -117,7 +111,7 @@ fn evaluate_single(expr: &str, ctx: &ExecutionContext) -> Result<String, Express
                     ))
                 })
         }
-        
+
         "github" => {
             // For compatibility, we support some github.* expressions
             // In our context, these map to run metadata
@@ -130,13 +124,16 @@ fn evaluate_single(expr: &str, ctx: &ExecutionContext) -> Result<String, Express
                 _ => Err(ExpressionError::UnknownVariable(expr.to_string())),
             }
         }
-        
+
         _ => Err(ExpressionError::UnknownVariable(expr.to_string())),
     }
 }
 
 /// Check if a condition expression evaluates to true
-pub fn evaluate_condition(condition: &str, ctx: &ExecutionContext) -> Result<bool, ExpressionError> {
+pub fn evaluate_condition(
+    condition: &str,
+    ctx: &ExecutionContext,
+) -> Result<bool, ExpressionError> {
     let condition = condition.trim();
 
     // Simple truthiness check for now
@@ -147,25 +144,31 @@ pub fn evaluate_condition(condition: &str, ctx: &ExecutionContext) -> Result<boo
     if condition.contains("==") {
         let parts: Vec<&str> = condition.split("==").collect();
         if parts.len() == 2 {
-            let left = evaluate(parts[0].trim(), ctx).unwrap_or_else(|_| parts[0].trim().to_string());
-            let right = evaluate(parts[1].trim(), ctx).unwrap_or_else(|_| parts[1].trim().to_string());
-            return Ok(left.trim_matches('"').trim_matches('\'') == right.trim_matches('"').trim_matches('\''));
+            let left =
+                evaluate(parts[0].trim(), ctx).unwrap_or_else(|_| parts[0].trim().to_string());
+            let right =
+                evaluate(parts[1].trim(), ctx).unwrap_or_else(|_| parts[1].trim().to_string());
+            return Ok(left.trim_matches('"').trim_matches('\'')
+                == right.trim_matches('"').trim_matches('\''));
         }
     }
-    
+
     if condition.contains("!=") {
         let parts: Vec<&str> = condition.split("!=").collect();
         if parts.len() == 2 {
-            let left = evaluate(parts[0].trim(), ctx).unwrap_or_else(|_| parts[0].trim().to_string());
-            let right = evaluate(parts[1].trim(), ctx).unwrap_or_else(|_| parts[1].trim().to_string());
-            return Ok(left.trim_matches('"').trim_matches('\'') != right.trim_matches('"').trim_matches('\''));
+            let left =
+                evaluate(parts[0].trim(), ctx).unwrap_or_else(|_| parts[0].trim().to_string());
+            let right =
+                evaluate(parts[1].trim(), ctx).unwrap_or_else(|_| parts[1].trim().to_string());
+            return Ok(left.trim_matches('"').trim_matches('\'')
+                != right.trim_matches('"').trim_matches('\''));
         }
     }
-    
+
     // Check for success()/failure()/always() functions
     match condition {
         "success()" => Ok(true),  // TODO: Track actual success state
-        "failure()" => Ok(false), // TODO: Track actual failure state  
+        "failure()" => Ok(false), // TODO: Track actual failure state
         "always()" => Ok(true),
         _ => {
             // Try to evaluate as expression
@@ -176,9 +179,9 @@ pub fn evaluate_condition(condition: &str, ctx: &ExecutionContext) -> Result<boo
 }
 
 fn is_truthy(value: &str) -> bool {
-    !value.is_empty() 
-        && value != "false" 
-        && value != "0" 
+    !value.is_empty()
+        && value != "false"
+        && value != "0"
         && value.to_lowercase() != "null"
         && value.to_lowercase() != "none"
 }
@@ -262,55 +265,56 @@ fn yaml_to_json_with_expressions(
             }
             Ok(serde_json::Value::Object(json_map))
         }
-        serde_yaml::Value::Tagged(tagged) => {
-            yaml_to_json_with_expressions(&tagged.value, ctx)
-        }
+        serde_yaml::Value::Tagged(tagged) => yaml_to_json_with_expressions(&tagged.value, ctx),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn test_context() -> ExecutionContext {
         let mut ctx = ExecutionContext::new();
-        ctx.env.insert("BASE_URL".to_string(), "https://example.com".to_string());
-        ctx.secrets.insert("API_KEY".to_string(), "secret123".to_string());
+        ctx.env
+            .insert("BASE_URL".to_string(), "https://example.com".to_string());
+        ctx.secrets
+            .insert("API_KEY".to_string(), "secret123".to_string());
         ctx.set_output("login", "token", "abc123".to_string());
         ctx
     }
-    
+
     #[test]
     fn test_evaluate_env() {
         let ctx = test_context();
         let result = evaluate("${{ env.BASE_URL }}/api", &ctx).unwrap();
         assert_eq!(result, "https://example.com/api");
     }
-    
+
     #[test]
     fn test_evaluate_secrets() {
         let ctx = test_context();
         let result = evaluate("Bearer ${{ secrets.API_KEY }}", &ctx).unwrap();
         assert_eq!(result, "Bearer secret123");
     }
-    
+
     #[test]
     fn test_evaluate_step_output() {
         let ctx = test_context();
         let result = evaluate("${{ steps.login.outputs.token }}", &ctx).unwrap();
         assert_eq!(result, "abc123");
     }
-    
+
     #[test]
     fn test_evaluate_multiple() {
         let ctx = test_context();
         let result = evaluate(
             "${{ env.BASE_URL }}?token=${{ steps.login.outputs.token }}",
-            &ctx
-        ).unwrap();
+            &ctx,
+        )
+        .unwrap();
         assert_eq!(result, "https://example.com?token=abc123");
     }
-    
+
     #[test]
     fn test_condition_equality() {
         let ctx = test_context();

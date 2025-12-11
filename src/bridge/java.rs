@@ -56,16 +56,18 @@ impl JavaBridge {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
 
-        let mut child = cmd.spawn().map_err(|e| {
-            BridgeError::StartupFailed(format!("Failed to spawn Java: {}", e))
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| BridgeError::StartupFailed(format!("Failed to spawn Java: {}", e)))?;
 
-        let stdin = child.stdin.take().ok_or_else(|| {
-            BridgeError::StartupFailed("Failed to get stdin".to_string())
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            BridgeError::StartupFailed("Failed to get stdout".to_string())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| BridgeError::StartupFailed("Failed to get stdin".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| BridgeError::StartupFailed("Failed to get stdout".to_string()))?;
 
         let (request_tx, request_rx) = mpsc::channel(100);
         spawn_communication_task(request_rx, stdin, stdout);
@@ -76,78 +78,33 @@ impl JavaBridge {
     async fn request(&self, method: &str, params: Value) -> Result<Value, BridgeError> {
         send_request(&self.request_tx, method, params).await
     }
-}
 
-#[async_trait]
-pub trait JavaBridgeOperations: Send + Sync {
-    async fn method_call(&self, name: &str, args: Value) -> Result<Value, BridgeError>;
-    async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError>;
-    async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError>;
-    async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError>;
-    async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError>;
-    async fn assert_custom(&self, name: &str, params: HashMap<String, Value>) -> Result<AssertionResult, BridgeError>;
-    async fn set_execution_info(&self, run_id: &str, job_name: &str, step_name: &str) -> Result<(), BridgeError>;
-    async fn sync_step_outputs(&self, step_id: &str, outputs: HashMap<String, String>) -> Result<(), BridgeError>;
-    async fn list_methods(&self) -> Result<Vec<MethodInfo>, BridgeError>;
-    async fn list_assertions(&self) -> Result<Vec<MethodInfo>, BridgeError>;
-}
-
-#[async_trait]
-impl JavaBridgeOperations for JavaBridge {
-    async fn method_call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
-        let result = self.request("method.call", serde_json::json!({ "name": name, "args": args })).await?;
+    pub async fn method_call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
+        let result = self
+            .request(
+                "method.call",
+                serde_json::json!({ "name": name, "args": args }),
+            )
+            .await?;
         Ok(result.get("result").cloned().unwrap_or(Value::Null))
     }
 
-    async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError> {
-        let result = self.request("ctx.get", serde_json::json!({ "key": key })).await?;
-        let value = result.get("value").cloned().unwrap_or(Value::Null);
-        Ok(if value.is_null() { None } else { Some(value) })
-    }
-
-    async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError> {
-        self.request("ctx.set", serde_json::json!({ "key": key, "value": value })).await?;
-        Ok(())
-    }
-
-    async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError> {
-        let result = self.request("ctx.clear", serde_json::json!({ "pattern": pattern })).await?;
-        Ok(result.get("cleared").and_then(|v| v.as_u64()).unwrap_or(0))
-    }
-
-    async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError> {
-        self.request("hook.call", serde_json::json!({ "hook": hook_name })).await?;
-        Ok(())
-    }
-
-    async fn assert_custom(&self, name: &str, params: HashMap<String, Value>) -> Result<AssertionResult, BridgeError> {
-        let result = self.request("assert.custom", serde_json::json!({ "name": name, "params": params })).await?;
-        Ok(AssertionResult {
-            success: result.get("success").and_then(|v| v.as_bool()).unwrap_or(false),
-            message: result.get("message").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            actual: result.get("actual").cloned(),
-            expected: result.get("expected").cloned(),
-        })
-    }
-
-    async fn set_execution_info(&self, run_id: &str, job_name: &str, step_name: &str) -> Result<(), BridgeError> {
-        self.request("ctx.setExecutionInfo", serde_json::json!({ "runId": run_id, "jobName": job_name, "stepName": step_name })).await?;
-        Ok(())
-    }
-
-    async fn sync_step_outputs(&self, step_id: &str, outputs: HashMap<String, String>) -> Result<(), BridgeError> {
-        self.request("ctx.syncStepOutputs", serde_json::json!({ "stepId": step_id, "outputs": outputs })).await?;
-        Ok(())
-    }
-
-    async fn list_methods(&self) -> Result<Vec<MethodInfo>, BridgeError> {
+    pub async fn list_methods(&self) -> Result<Vec<MethodInfo>, BridgeError> {
         let result = self.request("list_methods", serde_json::json!({})).await?;
         Ok(parse_method_list(&result, "methods"))
     }
 
-    async fn list_assertions(&self) -> Result<Vec<MethodInfo>, BridgeError> {
-        let result = self.request("list_assertions", serde_json::json!({})).await?;
+    pub async fn list_assertions(&self) -> Result<Vec<MethodInfo>, BridgeError> {
+        let result = self
+            .request("list_assertions", serde_json::json!({}))
+            .await?;
         Ok(parse_method_list(&result, "assertions"))
+    }
+
+    pub async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
+        self.request("clock.sync", serde_json::to_value(state).unwrap())
+            .await?;
+        Ok(())
     }
 }
 
@@ -167,15 +124,113 @@ fn parse_method_list(result: &Value, key: &str) -> Vec<MethodInfo> {
         .unwrap_or_default()
 }
 
-pub trait JavaOperations {}
-impl JavaOperations for JavaBridge {}
+#[async_trait]
+impl super::Bridge for JavaBridge {
+    fn platform(&self) -> crate::workflow::Platform {
+        crate::workflow::Platform::Java
+    }
 
-impl JavaBridge {
-    /// Sync the mock clock state to the Java bridge
-    pub async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
-        self.request("clock.sync", serde_json::to_value(state).unwrap())
+    async fn call(&self, name: &str, args: Value) -> Result<Value, BridgeError> {
+        self.method_call(name, args).await
+    }
+
+    async fn ctx_get(&self, key: &str) -> Result<Option<Value>, BridgeError> {
+        let result = self
+            .request("ctx.get", serde_json::json!({ "key": key }))
+            .await?;
+        let value = result.get("value").cloned().unwrap_or(Value::Null);
+        Ok(if value.is_null() { None } else { Some(value) })
+    }
+
+    async fn ctx_set(&self, key: &str, value: Value) -> Result<(), BridgeError> {
+        self.request("ctx.set", serde_json::json!({ "key": key, "value": value }))
             .await?;
         Ok(())
+    }
+
+    async fn ctx_clear(&self, pattern: &str) -> Result<u64, BridgeError> {
+        let result = self
+            .request("ctx.clear", serde_json::json!({ "pattern": pattern }))
+            .await?;
+        Ok(result.get("cleared").and_then(|v| v.as_u64()).unwrap_or(0))
+    }
+
+    async fn hook_call(&self, hook_name: &str) -> Result<(), BridgeError> {
+        self.request("hook.call", serde_json::json!({ "hook": hook_name }))
+            .await?;
+        Ok(())
+    }
+
+    async fn assert_custom(
+        &self,
+        name: &str,
+        params: HashMap<String, Value>,
+    ) -> Result<AssertionResult, BridgeError> {
+        let result = self
+            .request(
+                "assert.custom",
+                serde_json::json!({ "name": name, "params": params }),
+            )
+            .await?;
+        Ok(AssertionResult {
+            success: result
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            message: result
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            actual: result.get("actual").cloned(),
+            expected: result.get("expected").cloned(),
+        })
+    }
+
+    async fn set_execution_info(
+        &self,
+        run_id: &str,
+        job_name: &str,
+        step_name: &str,
+    ) -> Result<(), BridgeError> {
+        self.request(
+            "ctx.setExecutionInfo",
+            serde_json::json!({ "runId": run_id, "jobName": job_name, "stepName": step_name }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn sync_step_outputs(
+        &self,
+        step_id: &str,
+        outputs: HashMap<String, String>,
+    ) -> Result<(), BridgeError> {
+        self.request(
+            "ctx.syncStepOutputs",
+            serde_json::json!({ "stepId": step_id, "outputs": outputs }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn sync_clock(&self, state: &ClockSyncState) -> Result<(), BridgeError> {
+        JavaBridge::sync_clock(self, state).await
+    }
+
+    fn supports_context(&self) -> bool {
+        true
+    }
+
+    fn supports_hooks(&self) -> bool {
+        true
+    }
+
+    fn supports_clock(&self) -> bool {
+        true
+    }
+
+    fn as_java(&self) -> Option<&JavaBridge> {
+        Some(self)
     }
 }
 
@@ -218,7 +273,10 @@ mod tests {
     #[test]
     fn test_java_config_with_env() {
         let mut env = HashMap::new();
-        env.insert("DATABASE_URL".to_string(), "jdbc:postgresql://localhost/test".to_string());
+        env.insert(
+            "DATABASE_URL".to_string(),
+            "jdbc:postgresql://localhost/test".to_string(),
+        );
         let config = JavaConfig {
             jar: Some("./registry.jar".to_string()),
             main_class: "com.example.Registry".to_string(),
@@ -229,7 +287,10 @@ mod tests {
             env,
             hooks: Default::default(),
         };
-        assert_eq!(config.env.get("DATABASE_URL"), Some(&"jdbc:postgresql://localhost/test".to_string()));
+        assert_eq!(
+            config.env.get("DATABASE_URL"),
+            Some(&"jdbc:postgresql://localhost/test".to_string())
+        );
     }
 
     #[test]

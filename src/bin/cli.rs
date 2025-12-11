@@ -13,11 +13,11 @@ use testing_actions::prelude::*;
 use testing_actions::workflow::RunnerConfig;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use tracing_subscriber::EnvFilter;
 #[cfg(feature = "otel")]
 use tracing_subscriber::layer::SubscriberExt;
 #[cfg(feature = "otel")]
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 const DEFAULT_SERVER_URL: &str = "http://localhost:3000";
 
@@ -106,8 +106,8 @@ fn init_otel_tracing(verbose: bool) {
         "testing_actions=info"
     };
 
-    let otlp_endpoint =
-        std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_else(|_| "http://localhost:4317".to_string());
+    let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:4317".to_string());
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
@@ -191,7 +191,17 @@ async fn run(cli: Cli) -> anyhow::Result<bool> {
             parallel,
             fail_fast,
             filter,
-        } => run_directory(dir, config, parallel, fail_fast, filter, server_url.as_deref()).await,
+        } => {
+            run_directory(
+                dir,
+                config,
+                parallel,
+                fail_fast,
+                filter,
+                server_url.as_deref(),
+            )
+            .await
+        }
         Commands::List { dir } => list_workflows(dir).await,
         Commands::Validate { path } => validate(path).await,
     }
@@ -311,6 +321,7 @@ impl TelemetryReporter {
     }
 }
 
+#[allow(dead_code)]
 async fn wait_while_paused(paused: &AtomicBool, cancelled: &AtomicBool) {
     while paused.load(Ordering::SeqCst) {
         if cancelled.load(Ordering::SeqCst) {
@@ -375,7 +386,9 @@ fn start_command_listener(
                         match read.next().await {
                             Some(Ok(Message::Text(text))) => {
                                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                                    if json.get("type").and_then(|t| t.as_str()) == Some("connection_ack") {
+                                    if json.get("type").and_then(|t| t.as_str())
+                                        == Some("connection_ack")
+                                    {
                                         let subscribe_msg = serde_json::json!({
                                             "id": "1",
                                             "type": "subscribe",
@@ -390,13 +403,20 @@ fn start_command_listener(
                                         {
                                             connection_active = false;
                                         }
-                                    } else if json.get("type").and_then(|t| t.as_str()) == Some("next") {
+                                    } else if json.get("type").and_then(|t| t.as_str())
+                                        == Some("next")
+                                    {
                                         if let Some(payload) = json.get("payload") {
                                             if let Some(data) = payload.get("data") {
                                                 if let Some(cmd) = data.get("commandsForRun") {
-                                                    let cmd_run_id = cmd.get("runId").and_then(|r| r.as_str());
-                                                    let cmd_token = cmd.get("agentToken").and_then(|t| t.as_str());
-                                                    let cmd_type = cmd.get("commandType").and_then(|c| c.as_str());
+                                                    let cmd_run_id =
+                                                        cmd.get("runId").and_then(|r| r.as_str());
+                                                    let cmd_token = cmd
+                                                        .get("agentToken")
+                                                        .and_then(|t| t.as_str());
+                                                    let cmd_type = cmd
+                                                        .get("commandType")
+                                                        .and_then(|c| c.as_str());
 
                                                     if cmd_run_id != Some(run_id.as_str()) {
                                                         tracing::warn!(
@@ -428,10 +448,15 @@ fn start_command_listener(
                                                             paused.store(false, Ordering::SeqCst);
                                                         }
                                                         Some(other) => {
-                                                            tracing::warn!("Ignoring unknown command type: {}", other);
+                                                            tracing::warn!(
+                                                                "Ignoring unknown command type: {}",
+                                                                other
+                                                            );
                                                         }
                                                         None => {
-                                                            tracing::warn!("Received command with no type");
+                                                            tracing::warn!(
+                                                                "Received command with no type"
+                                                            );
                                                         }
                                                     }
                                                 }
@@ -613,7 +638,13 @@ async fn run_directory(
             .register_run(&run_id, &dir.display().to_string())
             .await;
 
-        let command_handle = start_command_listener(server, &run_id, reporter.agent_token(), cancelled.clone(), paused.clone());
+        let command_handle = start_command_listener(
+            server,
+            &run_id,
+            reporter.agent_token(),
+            cancelled.clone(),
+            paused.clone(),
+        );
 
         let flush_server_url = server.to_string();
         let flush_cancelled = cancelled.clone();
@@ -685,10 +716,7 @@ async fn run_directory(
 
                         if let Some((ref reporter, _, _, _)) = telemetry {
                             reporter.send_event(RunEvent::workflow_completed(
-                                &run_id,
-                                name,
-                                wr.success,
-                                None,
+                                &run_id, name, wr.success, None,
                             ));
                         }
                     }
@@ -734,10 +762,7 @@ async fn run_directory(
 
                     if let Some((ref reporter, _, _, _)) = telemetry {
                         reporter.send_event(RunEvent::workflow_completed(
-                            &run_id,
-                            name,
-                            wr.success,
-                            None,
+                            &run_id, name, wr.success, None,
                         ));
                     }
                 }

@@ -1,9 +1,9 @@
 //! Web/HTTP action implementations
 
-use std::collections::HashMap;
-use crate::bridge::{WebBridge, WebBridgeOperations};
+use crate::bridge::WebBridge;
 use crate::engine::error::ExecutorError;
 use crate::engine::result::StepResult;
+use std::collections::HashMap;
 
 pub async fn execute_web_request(
     bridge: &WebBridge,
@@ -75,12 +75,16 @@ pub async fn execute_assert(
                 .get("expected")
                 .ok_or_else(|| ExecutorError::MissingParameter("expected".to_string()))?
                 .parse::<u16>()
-                .map_err(|_| ExecutorError::MissingParameter("expected must be a number".to_string()))?;
+                .map_err(|_| {
+                    ExecutorError::MissingParameter("expected must be a number".to_string())
+                })?;
             let actual = params
                 .get("actual")
                 .ok_or_else(|| ExecutorError::MissingParameter("actual".to_string()))?
                 .parse::<u16>()
-                .map_err(|_| ExecutorError::MissingParameter("actual must be a number".to_string()))?;
+                .map_err(|_| {
+                    ExecutorError::MissingParameter("actual must be a number".to_string())
+                })?;
 
             if actual != expected {
                 return Err(ExecutorError::AssertionFailed(format!(
@@ -96,9 +100,9 @@ pub async fn execute_assert(
                 response: None,
             })
         }
-        "json_path" => {
-            Err(ExecutorError::UnknownAction("assert/json_path not yet implemented".to_string()))
-        }
+        "json_path" => Err(ExecutorError::UnknownAction(
+            "assert/json_path not yet implemented".to_string(),
+        )),
         _ => Err(ExecutorError::UnknownAction(format!("assert/{}", action))),
     }
 }
