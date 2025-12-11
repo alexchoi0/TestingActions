@@ -10,7 +10,7 @@ A GitHub Actions-style declarative workflow engine for multi-platform test autom
 - **Parallel execution** - Run independent workflows simultaneously
 - **Expression syntax** - Use `${{ }}` for dynamic values
 - **Web dashboard** - ReactFlow-based DAG visualization
-- **Optional telemetry** - Report results to a server
+- **Real-time control** - Pause, resume, and stop workflows remotely
 
 ## Quick Start
 
@@ -20,26 +20,64 @@ A GitHub Actions-style declarative workflow engine for multi-platform test autom
 cargo install --path .
 ```
 
+This installs two binaries:
+- **`ta-run`** - Execute workflows
+- **`ta-ctl`** - Control and query the server
+
+### Start the server
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
 ### Run workflows
 
 ```bash
-# Run all workflows in a directory
-testing-actions run-dir workflows/
+# Run all workflows in a directory (connects to server by default)
+ta-run run-dir workflows/
 
 # Run a single workflow
-testing-actions run workflow.yaml
+ta-run run workflow.yaml
+
+# Run offline (no server connection)
+ta-run --offline run-dir workflows/
 
 # List workflows and execution order
-testing-actions list workflows/
+ta-run list workflows/
 
 # Validate workflows
-testing-actions validate workflows/
+ta-run validate workflows/
 ```
 
-### With telemetry reporting
+### Query and control workflows
 
 ```bash
-testing-actions run-dir workflows/ --server http://localhost:3000
+# Check server health
+ta-ctl health
+
+# List all runs
+ta-ctl runs
+
+# Get run details
+ta-ctl run <run-id>
+
+# Watch events in real-time
+ta-ctl watch <run-id>
+
+# Control execution
+ta-ctl pause <run-id>
+ta-ctl resume <run-id>
+ta-ctl stop <run-id>
+```
+
+### Configuration
+
+Both `ta-run` and `ta-ctl` use the `TA_SERVER_URL` environment variable:
+
+```bash
+export TA_SERVER_URL=http://localhost:3000
 ```
 
 ## Workflow Syntax
@@ -185,7 +223,8 @@ The `web/` directory contains a Next.js dashboard with:
 
 - ReactFlow DAG visualization
 - Real-time workflow status
-- GraphQL API for telemetry
+- GraphQL API with subscriptions
+- Google SSO authentication
 
 ```bash
 cd web
@@ -198,14 +237,17 @@ npm run dev
 ```
 testing-actions/
 ├── src/
-│   ├── bin/cli.rs      # CLI entry point
-│   ├── lib.rs          # Library exports
-│   ├── workflow/       # YAML parsing, types
-│   ├── engine/         # Execution engine, DAG
-│   └── bridge/         # Platform bridges
-├── workflows/          # Example workflows
-├── web/                # Next.js dashboard
-└── extensions/         # Platform extensions
+│   ├── bin/
+│   │   ├── cli.rs         # ta-run binary
+│   │   └── ta_cli.rs      # ta-ctl binary
+│   ├── lib.rs             # Library exports
+│   ├── client/            # Shared GraphQL client
+│   ├── workflow/          # YAML parsing, types
+│   ├── engine/            # Execution engine, DAG
+│   └── bridge/            # Platform bridges
+├── workflows/             # Example workflows
+├── web/                   # Next.js dashboard
+└── extensions/            # Platform extensions
     ├── nodejs/
     ├── python/
     ├── java/
@@ -215,8 +257,10 @@ testing-actions/
 
 ## CLI Reference
 
+### ta-run
+
 ```
-testing-actions [OPTIONS] <COMMAND>
+ta-run [OPTIONS] <COMMAND>
 
 Commands:
   run       Run a single workflow file
@@ -225,22 +269,42 @@ Commands:
   validate  Validate workflow files
 
 Options:
-  -s, --server <URL>  Server URL for telemetry
+  -s, --server <URL>  Server URL [env: TA_SERVER_URL]
+      --offline       Disable server connection
   -v, --verbose       Enable verbose output
   -h, --help          Print help
   -V, --version       Print version
 ```
 
-### run-dir options
+### ta-run run-dir
 
 ```
-testing-actions run-dir <DIR> [OPTIONS]
+ta-run run-dir <DIR> [OPTIONS]
 
 Options:
   -c, --config <FILE>    Runner config file
   -p, --parallel <N>     Max parallel workflows
   -f, --fail-fast        Stop on first failure
   -F, --filter <PREFIX>  Filter by name prefix
+```
+
+### ta-ctl
+
+```
+ta-ctl <COMMAND>
+
+Commands:
+  health  Check server health
+  runs    List all runs
+  run     Get details of a specific run
+  events  Get events for a specific run
+  watch   Watch events in real-time
+  stop    Stop a running workflow
+  pause   Pause a running workflow
+  resume  Resume a paused workflow
+
+Environment:
+  TA_SERVER_URL  Server URL (default: http://localhost:3000)
 ```
 
 ## License
