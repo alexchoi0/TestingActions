@@ -26,7 +26,7 @@
     "graphql-ws": "^6.0.6",
     "graphql-yoga": "^5.17.1",
     "lucide-react": "^0.556.0",
-    "next": "16.0.8",
+    "next": "16.0.10",
     "prisma": "^5.22.0",
     "react": "19.2.1",
     "react-dom": "19.2.1",
